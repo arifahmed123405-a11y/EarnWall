@@ -13,15 +13,43 @@ function Auth({ onAuthed }) {
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const submit = async e => {
-    e.preventDefault()
-    setBusy(true); setMsg('')
-    const fn = mode === 'login' ? supabase.auth.signInWithPassword : supabase.auth.signUp
-    const { data, error } = await fn({ email, password })
+  const submit = async (e) => {
+  e.preventDefault()
+  setBusy(true)
+  setMsg('')
+
+  try {
+    let result
+
+    if (mode === 'login') {
+      result = await supabase.auth.signInWithPassword({
+        email,
+        password
+      })
+    } else {
+      result = await supabase.auth.signUp({
+        email,
+        password
+      })
+    }
+
+    const { data, error } = result
+
+    if (error) {
+      setMsg(error.message)
+      return
+    }
+
+    if (data.session) {
+      onAuthed(data.session)
+    } else {
+      setMsg('Account created. Check your email if confirmation is required.')
+    }
+  } catch (err) {
+    setMsg(err?.message || 'Could not connect to Supabase.')
+  } finally {
     setBusy(false)
-    if (error) return setMsg(error.message)
-    if (data.session) onAuthed(data.session)
-    else setMsg('Check your email to confirm your account.')
+  }
   }
 
   return <div className="auth-shell">
