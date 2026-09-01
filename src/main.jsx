@@ -528,6 +528,20 @@ function Activity({ history }) {
     )
   }
 
+  const rewardText = item => {
+    const amount = money(item.reward)
+
+    if (item.status === 'reversed' || item.status === 'rejected') {
+      return `-${amount}`
+    }
+
+    if (item.status === 'held' || item.status === 'pending') {
+      return `Pending ${amount}`
+    }
+
+    return `+${amount}`
+  }
+
   return (
     <div className="list">
       {history.map(item => (
@@ -542,7 +556,7 @@ function Activity({ history }) {
           </div>
 
           <strong>
-            +{money(item.reward)}
+            {rewardText(item)}
           </strong>
         </div>
       ))}
