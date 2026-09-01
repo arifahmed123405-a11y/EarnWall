@@ -1,6 +1,14 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { Home, Wallet, Gift, User, LogOut, ArrowRight, RefreshCcw } from 'lucide-react'
+import {
+  Home,
+  Wallet,
+  Gift,
+  User,
+  LogOut,
+  ArrowRight,
+  RefreshCcw
+} from 'lucide-react'
 import { supabase } from './supabase'
 import './styles.css'
 
@@ -13,7 +21,7 @@ function Auth({ onAuthed }) {
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const submit = async (e) => {
+  const submit = async e => {
     e.preventDefault()
     setBusy(true)
     setMsg('')
@@ -24,12 +32,12 @@ function Auth({ onAuthed }) {
       if (mode === 'login') {
         result = await supabase.auth.signInWithPassword({
           email,
-          password,
+          password
         })
       } else {
         result = await supabase.auth.signUp({
           email,
-          password,
+          password
         })
       }
 
@@ -94,7 +102,7 @@ function Auth({ onAuthed }) {
           type="email"
           placeholder="Email"
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={e => setEmail(e.target.value)}
           required
           autoComplete="email"
         />
@@ -103,7 +111,7 @@ function Auth({ onAuthed }) {
           type="password"
           placeholder="Password"
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          onChange={e => setPassword(e.target.value)}
           required
           minLength={6}
           autoComplete={
@@ -119,30 +127,36 @@ function Auth({ onAuthed }) {
             : 'Create account'}
         </button>
 
-        {msg && (
-          <div className="notice">
-            {msg}
-          </div>
-        )}
+        {msg && <div className="notice">{msg}</div>}
       </form>
     </div>
   )
 }
+
 function App() {
   const [session, setSession] = useState(null)
   const [tab, setTab] = useState('home')
+
   const [wallet, setWallet] = useState(null)
-  const [offers, setOffers] = useState([])
-  const [history, setHistory] = useState([])
+  const [cpagripHistory, setCpagripHistory] = useState([])
+  const [offerwallHistory, setOfferwallHistory] = useState([])
   const [withdrawals, setWithdrawals] = useState([])
-  const [loadingOffers, setLoadingOffers] = useState(false)
+
   const [withdrawAmount, setWithdrawAmount] = useState('')
   const [upi, setUpi] = useState('')
   const [message, setMessage] = useState('')
 
   useEffect(() => {
-    supabase.auth.getSession().then(({data}) => setSession(data.session))
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => setSession(s))
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session)
+    })
+
+    const { data: sub } = supabase.auth.onAuthStateChange(
+      (_event, newSession) => {
+        setSession(newSession)
+      }
+    )
+
     return () => sub.subscription.unsubscribe()
   }, [])
 
@@ -150,155 +164,392 @@ function App() {
 
   const refreshData = async () => {
     if (!user) return
-    const [{data:w},{data:h},{data:wd},{data:p}] = await Promise.all([
-      supabase.from('wallets').select('*').eq('user_id', user.id).single(),
-      supabase.from('offer_completions').select('*').eq('user_id', user.id).order('created_at',{ascending:false}).limit(20),
-      supabase.from('withdrawals').select('*').eq('user_id', user.id).order('requested_at',{ascending:false}).limit(20),
-      supabase.from('profiles').select('upi_id').eq('id', user.id).single()
+
+    setMessage('')
+
+    const [
+      { data: walletData, error: walletError },
+      { data: cpagripData },
+      { data: offerwallData },
+      { data: withdrawalData },
+      { data: profileData }
+    ] = await Promise.all([
+      supabase
+        .from('wallets')
+        .select('*')
+        .eq('user_id', user.id)
+        .single(),
+
+      supabase
+        .from('offer_completions')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(20),
+
+      supabase
+        .from('offerwallad_transactions')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(20),
+
+      supabase
+        .from('withdrawals')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('requested_at', { ascending: false })
+        .limit(20),
+
+      supabase
+        .from('profiles')
+        .select('upi_id')
+        .eq('id', user.id)
+        .single()
     ])
-    setWallet(w || {withdrawable_balance:0,pending_balance:0,lifetime_earned:0})
-    setHistory(h || [])
-    setWithdrawals(wd || [])
-    if (p?.upi_id) setUpi(p.upi_id)
+
+    if (walletError) {
+      console.error(walletError)
+    }
+
+    setWallet(
+      walletData || {
+        withdrawable_balance: 0,
+        pending_balance: 0,
+        lifetime_earned: 0
+      }
+    )
+
+    setCpagripHistory(cpagripData || [])
+    setOfferwallHistory(offerwallData || [])
+    setWithdrawals(withdrawalData || [])
+
+    if (profileData?.upi_id) {
+      setUpi(profileData.upi_id)
+    }
   }
 
-  useEffect(() => { if (user) refreshData() }, [user?.id])
-
-  const loadOffers = async () => {
-    if (!session) return
-    setLoadingOffers(true); setMessage('')
-    const { data, error } = await supabase.functions.invoke('cpagrip-offers')
-    setLoadingOffers(false)
-    if (error) return setMessage(error.message)
-    const arr = data?.offers || data || []
-    setOffers(Array.isArray(arr) ? arr : [])
-  }
-
-  useEffect(() => { if (tab === 'earn' && offers.length === 0) loadOffers() }, [tab])
+  useEffect(() => {
+    if (user) {
+      refreshData()
+    }
+  }, [user?.id])
 
   const doWithdraw = async e => {
     e.preventDefault()
     setMessage('')
+
     const amount = Number(withdrawAmount)
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setMessage('Enter a valid withdrawal amount.')
+      return
+    }
+
     const { data, error } = await supabase.rpc('request_withdrawal', {
       p_amount_usd: amount,
       p_upi_id: upi
     })
-    if (error) return setMessage(error.message)
-    if (!data?.ok) return setMessage(data?.error || 'Withdrawal failed')
+
+    if (error) {
+      setMessage(error.message)
+      return
+    }
+
+    if (!data?.ok) {
+      setMessage(data?.error || 'Withdrawal failed')
+      return
+    }
+
     setMessage(`Withdrawal requested: ${money(amount)}`)
     setWithdrawAmount('')
     refreshData()
   }
 
-  if (!session) return <Auth onAuthed={setSession} />
+  if (!session) {
+    return <Auth onAuthed={setSession} />
+  }
 
   const nav = [
     ['home', Home, 'Home'],
     ['earn', Gift, 'Earn'],
     ['wallet', Wallet, 'Wallet'],
-    ['profile', User, 'Profile'],
+    ['profile', User, 'Profile']
   ]
 
-  return <div className="app">
-    <header>
-      <div>
-        <span className="eyebrow">AVAILABLE</span>
-        <strong>{money(wallet?.withdrawable_balance)}</strong>
+  const combinedHistory = [
+    ...cpagripHistory.map(item => ({
+      id: `cpagrip-${item.id}`,
+      title: `Offer #${item.offer_id}`,
+      reward: item.user_reward_usd,
+      status: item.status,
+      created_at: item.created_at,
+      source: 'CPAGrip'
+    })),
+
+    ...offerwallHistory.map(item => ({
+      id: `offerwall-${item.transaction_id}`,
+      title: item.offer_name || `Offer #${item.offer_id || 'Unknown'}`,
+      reward: item.user_reward,
+      status: item.status,
+      created_at: item.created_at,
+      source: 'Offerwall.ad'
+    }))
+  ]
+    .sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() -
+        new Date(a.created_at).getTime()
+    )
+    .slice(0, 20)
+
+  const offerwallUrl =
+    `https://offerwall.ad/wall/0e9b654ecf927f93fa7a88456aa72dac` +
+    `?uid=${encodeURIComponent(user.id)}`
+
+  return (
+    <div className="app">
+      <header>
+        <div>
+          <span className="eyebrow">AVAILABLE</span>
+          <strong>{money(wallet?.withdrawable_balance)}</strong>
+        </div>
+
+        <button className="icon-btn" onClick={refreshData}>
+          <RefreshCcw size={18} />
+        </button>
+      </header>
+
+      <main>
+        {message && <div className="notice">{message}</div>}
+
+        {tab === 'home' && (
+          <>
+            <section className="hero-card">
+              <span>Your balance</span>
+
+              <h2>{money(wallet?.withdrawable_balance)}</h2>
+
+              <p>{money(wallet?.pending_balance)} pending</p>
+
+              <button
+                className="primary"
+                onClick={() => setTab('earn')}
+              >
+                Start earning
+                <ArrowRight size={18} />
+              </button>
+            </section>
+
+            <div className="stats">
+              <div>
+                <span>Lifetime</span>
+                <b>{money(wallet?.lifetime_earned)}</b>
+              </div>
+
+              <div>
+                <span>Offers</span>
+                <b>{combinedHistory.length}</b>
+              </div>
+            </div>
+
+            <h3>Recent activity</h3>
+
+            <Activity history={combinedHistory} />
+          </>
+        )}
+
+        {tab === 'earn' && (
+          <>
+            <div className="section-head">
+              <div>
+                <span className="eyebrow">DISCOVER</span>
+                <h2>Earn offers</h2>
+              </div>
+
+              <button
+                className="icon-btn"
+                onClick={refreshData}
+                title="Refresh balance"
+              >
+                <RefreshCcw size={18} />
+              </button>
+            </div>
+
+            <div className="offerwall-shell">
+              <iframe
+                src={offerwallUrl}
+                title="EarnWall Offers"
+                allow="clipboard-write"
+                style={{
+                  width: '100%',
+                  height: '850px',
+                  border: '0',
+                  borderRadius: '18px',
+                  background: '#ffffff'
+                }}
+              />
+            </div>
+
+            <p
+              style={{
+                opacity: 0.65,
+                fontSize: '12px',
+                marginTop: '10px'
+              }}
+            >
+              Rewards appear after the offer provider confirms completion.
+            </p>
+          </>
+        )}
+
+        {tab === 'wallet' && (
+          <>
+            <h2>Wallet</h2>
+
+            <div className="wallet-grid">
+              <div>
+                <span>Withdrawable</span>
+                <b>{money(wallet?.withdrawable_balance)}</b>
+              </div>
+
+              <div>
+                <span>Pending</span>
+                <b>{money(wallet?.pending_balance)}</b>
+              </div>
+
+              <div>
+                <span>Lifetime</span>
+                <b>{money(wallet?.lifetime_earned)}</b>
+              </div>
+            </div>
+
+            <form className="withdraw-card" onSubmit={doWithdraw}>
+              <h3>Withdraw to UPI</h3>
+
+              <input
+                value={withdrawAmount}
+                onChange={e => setWithdrawAmount(e.target.value)}
+                type="number"
+                min="1"
+                step="0.01"
+                placeholder="Amount in USD"
+                required
+              />
+
+              <input
+                value={upi}
+                onChange={e => setUpi(e.target.value)}
+                placeholder="yourname@upi"
+                required
+              />
+
+              <button className="primary">
+                Request withdrawal
+              </button>
+
+              <small>
+                Minimum withdrawal is currently $1. Requests are manually reviewed.
+              </small>
+            </form>
+
+            <h3>Withdrawals</h3>
+
+            <div className="list">
+              {withdrawals.length === 0 && (
+                <div className="empty">
+                  No withdrawal requests yet.
+                </div>
+              )}
+
+              {withdrawals.map(w => (
+                <div className="row" key={w.id}>
+                  <div>
+                    <b>{money(w.amount_usd)}</b>
+                    <span>{w.upi_id}</span>
+                  </div>
+
+                  <em className={`status ${w.status}`}>
+                    {w.status}
+                  </em>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {tab === 'profile' && (
+          <>
+            <h2>Profile</h2>
+
+            <div className="profile-card">
+              <span>Signed in as</span>
+
+              <b>{user.email}</b>
+
+              <small>
+                User ID: {user.id}
+              </small>
+
+              <button
+                className="ghost danger"
+                onClick={() => supabase.auth.signOut()}
+              >
+                <LogOut size={18} />
+                Sign out
+              </button>
+            </div>
+          </>
+        )}
+      </main>
+
+      <nav>
+        {nav.map(([id, Icon, label]) => (
+          <button
+            key={id}
+            className={tab === id ? 'active' : ''}
+            onClick={() => setTab(id)}
+          >
+            <Icon size={20} />
+            <span>{label}</span>
+          </button>
+        ))}
+      </nav>
+    </div>
+  )
+}
+
+function Activity({ history }) {
+  if (!history.length) {
+    return (
+      <div className="empty">
+        Your completed offers will appear here.
       </div>
-      <button className="icon-btn" onClick={refreshData}><RefreshCcw size={18}/></button>
-    </header>
+    )
+  }
 
-    <main>
-      {message && <div className="notice">{message}</div>}
+  return (
+    <div className="list">
+      {history.map(item => (
+        <div className="row" key={item.id}>
+          <div>
+            <b>{item.title}</b>
 
-      {tab==='home' && <>
-        <section className="hero-card">
-          <span>Your balance</span>
-          <h2>{money(wallet?.withdrawable_balance)}</h2>
-          <p>{money(wallet?.pending_balance)} pending</p>
-          <button className="primary" onClick={()=>setTab('earn')}>Start earning <ArrowRight size={18}/></button>
-        </section>
-        <div className="stats">
-          <div><span>Lifetime</span><b>{money(wallet?.lifetime_earned)}</b></div>
-          <div><span>Offers</span><b>{history.length}</b></div>
+            <span>
+              {item.source} · {item.status} ·{' '}
+              {new Date(item.created_at).toLocaleString()}
+            </span>
+          </div>
+
+          <strong>
+            +{money(item.reward)}
+          </strong>
         </div>
-        <h3>Recent activity</h3>
-        <Activity history={history}/>
-      </>}
-
-      {tab==='earn' && <>
-        <div className="section-head">
-          <div><span className="eyebrow">DISCOVER</span><h2>Earn offers</h2></div>
-          <button className="icon-btn" onClick={loadOffers}><RefreshCcw size={18}/></button>
-        </div>
-        {loadingOffers && <div className="empty">Loading offers…</div>}
-        {!loadingOffers && offers.length===0 && <div className="empty">No offers available right now.</div>}
-        <div className="offer-grid">
-          {offers.map((o,i)=><OfferCard key={o.offerid || o.id || i} offer={o}/>)}
-        </div>
-      </>}
-
-      {tab==='wallet' && <>
-        <h2>Wallet</h2>
-        <div className="wallet-grid">
-          <div><span>Withdrawable</span><b>{money(wallet?.withdrawable_balance)}</b></div>
-          <div><span>Pending</span><b>{money(wallet?.pending_balance)}</b></div>
-          <div><span>Lifetime</span><b>{money(wallet?.lifetime_earned)}</b></div>
-        </div>
-        <form className="withdraw-card" onSubmit={doWithdraw}>
-          <h3>Withdraw to UPI</h3>
-          <input value={withdrawAmount} onChange={e=>setWithdrawAmount(e.target.value)} type="number" min="1" step="0.01" placeholder="Amount in USD" required/>
-          <input value={upi} onChange={e=>setUpi(e.target.value)} placeholder="yourname@upi" required/>
-          <button className="primary">Request withdrawal</button>
-          <small>Minimum withdrawal is currently $1. Requests are manually reviewed.</small>
-        </form>
-        <h3>Withdrawals</h3>
-        <div className="list">
-          {withdrawals.map(w=><div className="row" key={w.id}><div><b>{money(w.amount_usd)}</b><span>{w.upi_id}</span></div><em className={`status ${w.status}`}>{w.status}</em></div>)}
-        </div>
-      </>}
-
-      {tab==='profile' && <>
-        <h2>Profile</h2>
-        <div className="profile-card">
-          <span>Signed in as</span>
-          <b>{user.email}</b>
-          <small>User ID: {user.id}</small>
-          <button className="ghost danger" onClick={()=>supabase.auth.signOut()}><LogOut size={18}/> Sign out</button>
-        </div>
-      </>}
-    </main>
-
-    <nav>
-      {nav.map(([id,Icon,label])=><button key={id} className={tab===id?'active':''} onClick={()=>setTab(id)}><Icon size={20}/><span>{label}</span></button>)}
-    </nav>
-  </div>
-}
-
-function OfferCard({ offer }) {
-  const title = offer.title || offer.name || 'Offer'
-  const desc = offer.description || offer.desc || offer.requirements || 'Complete this offer to earn.'
-  const payout = offer.payout || offer.amount || offer.points || offer.epc || 0
-  const image = offer.picture || offer.image || offer.icon || offer.thumbnail
-  const link = offer.offerlink || offer.url || offer.link
-  return <article className="offer-card">
-    <div className="offer-top">
-      {image ? <img src={image} alt="" /> : <div className="offer-fallback">★</div>}
-      <div><h3>{title}</h3><p>{String(desc).slice(0,120)}</p></div>
+      ))}
     </div>
-    <div className="offer-bottom">
-      <div><span>Reward</span><b>{money(payout)}</b></div>
-      <button className="primary small" disabled={!link} onClick={()=>link && window.open(link,'_blank','noopener,noreferrer')}>Start</button>
-    </div>
-  </article>
+  )
 }
 
-function Activity({history}) {
-  if (!history.length) return <div className="empty">Your completed offers will appear here.</div>
-  return <div className="list">
-    {history.map(h=><div className="row" key={h.id}><div><b>Offer #{h.offer_id}</b><span>{new Date(h.created_at).toLocaleString()}</span></div><strong>+{money(h.user_reward_usd)}</strong></div>)}
-  </div>
-}
-
-createRoot(document.getElementById('root')).render(<App/>)
+createRoot(document.getElementById('root')).render(
+  <App />
+)
