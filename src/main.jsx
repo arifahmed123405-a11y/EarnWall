@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
@@ -7,7 +8,8 @@ import {
   User,
   LogOut,
   ArrowRight,
-  RefreshCcw
+  RefreshCcw,
+  ExternalLink
 } from 'lucide-react'
 import { supabase } from './supabase'
 import './styles.css'
@@ -27,19 +29,10 @@ function Auth({ onAuthed }) {
     setMsg('')
 
     try {
-      let result
-
-      if (mode === 'login') {
-        result = await supabase.auth.signInWithPassword({
-          email,
-          password
-        })
-      } else {
-        result = await supabase.auth.signUp({
-          email,
-          password
-        })
-      }
+      const result =
+        mode === 'login'
+          ? await supabase.auth.signInWithPassword({ email, password })
+          : await supabase.auth.signUp({ email, password })
 
       const { data, error } = result
 
@@ -51,9 +44,7 @@ function Auth({ onAuthed }) {
       if (data.session) {
         onAuthed(data.session)
       } else {
-        setMsg(
-          'Account created. Check your email if email confirmation is enabled.'
-        )
+        setMsg('Account created. Check your email if confirmation is enabled.')
       }
     } catch (err) {
       console.error(err)
@@ -114,9 +105,7 @@ function Auth({ onAuthed }) {
           onChange={e => setPassword(e.target.value)}
           required
           minLength={6}
-          autoComplete={
-            mode === 'login' ? 'current-password' : 'new-password'
-          }
+          autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
         />
 
         <button className="primary" type="submit" disabled={busy}>
@@ -142,6 +131,10 @@ function App() {
   const [offerwallHistory, setOfferwallHistory] = useState([])
   const [withdrawals, setWithdrawals] = useState([])
 
+  const [offers, setOffers] = useState([])
+  const [loadingOffers, setLoadingOffers] = useState(false)
+  const [offerError, setOfferError] = useState('')
+
   const [withdrawAmount, setWithdrawAmount] = useState('')
   const [upi, setUpi] = useState('')
   const [message, setMessage] = useState('')
@@ -165,10 +158,8 @@ function App() {
   const refreshData = async () => {
     if (!user) return
 
-    setMessage('')
-
     const [
-      { data: walletData, error: walletError },
+      { data: walletData },
       { data: cpagripData },
       { data: offerwallData },
       { data: withdrawalData },
@@ -208,10 +199,6 @@ function App() {
         .single()
     ])
 
-    if (walletError) {
-      console.error(walletError)
-    }
-
     setWallet(
       walletData || {
         withdrawable_balance: 0,
@@ -229,11 +216,48 @@ function App() {
     }
   }
 
+  const loadOffers = async () => {
+    if (!session) return
+
+    setLoadingOffers(true)
+    setOfferError('')
+
+    try {
+      const { data, error } = await supabase.functions.invoke(
+        'offerwallad-offers'
+      )
+
+      if (error) {
+        setOfferError(error.message)
+        return
+      }
+
+      const arr =
+        data?.offers ||
+        data?.data ||
+        data?.results ||
+        (Array.isArray(data) ? data : [])
+
+      setOffers(Array.isArray(arr) ? arr : [])
+    } catch (err) {
+      console.error(err)
+      setOfferError(err?.message || 'Could not load offers.')
+    } finally {
+      setLoadingOffers(false)
+    }
+  }
+
   useEffect(() => {
     if (user) {
       refreshData()
     }
   }, [user?.id])
+
+  useEffect(() => {
+    if (tab === 'earn' && offers.length === 0) {
+      loadOffers()
+    }
+  }, [tab])
 
   const doWithdraw = async e => {
     e.preventDefault()
@@ -303,10 +327,6 @@ function App() {
     )
     .slice(0, 20)
 
-  const offerwallUrl =
-    `https://offerwall.ad/wall/0e9b654ecf927f93fa7a88456aa72dac` +
-    `?uid=${encodeURIComponent(user.id)}`
-
   return (
     <div className="app">
       <header>
@@ -327,9 +347,7 @@ function App() {
           <>
             <section className="hero-card">
               <span>Your balance</span>
-
               <h2>{money(wallet?.withdrawable_balance)}</h2>
-
               <p>{money(wallet?.pending_balance)} pending</p>
 
               <button
@@ -369,36 +387,55 @@ function App() {
 
               <button
                 className="icon-btn"
-                onClick={refreshData}
-                title="Refresh balance"
+                onClick={loadOffers}
+                disabled={loadingOffers}
               >
                 <RefreshCcw size={18} />
               </button>
             </div>
 
-            <div className="offerwall-shell">
-              <iframe
-                src={offerwallUrl}
-                title="EarnWall Offers"
-                allow="clipboard-write"
-                style={{
-                  width: '100%',
-                  height: '850px',
-                  border: '0',
-                  borderRadius: '18px',
-                  background: '#ffffff'
-                }}
-              />
+            {loadingOffers && (
+              <div className="empty">
+                Loading offers…
+              </div>
+            )}
+
+            {offerError && (
+              <div className="notice">
+                {offerError}
+              </div>
+            )}
+
+            {!loadingOffers &&
+              !offerError &&
+              offers.length === 0 && (
+                <div className="empty">
+                  No offers available right now.
+                </div>
+              )}
+
+            <div className="offer-grid">
+              {offers.map((offer, index) => (
+                <OfferCard
+                  key={
+                    offer.id ||
+                    offer.offer_id ||
+                    offer.offerId ||
+                    index
+                  }
+                  offer={offer}
+                />
+              ))}
             </div>
 
             <p
               style={{
                 opacity: 0.65,
                 fontSize: '12px',
-                marginTop: '10px'
+                marginTop: '12px'
               }}
             >
-              Rewards appear after the offer provider confirms completion.
+              Rewards are credited only after the advertiser confirms completion.
             </p>
           </>
         )}
@@ -519,6 +556,112 @@ function App() {
   )
 }
 
+function OfferCard({ offer }) {
+  const title =
+    offer.title ||
+    offer.name ||
+    offer.offer_name ||
+    'Offer'
+
+  const description =
+    offer.description ||
+    offer.requirements ||
+    offer.instructions ||
+    offer.short_description ||
+    'Complete this offer to earn a reward.'
+
+  const image =
+    offer.image ||
+    offer.icon ||
+    offer.thumbnail ||
+    offer.logo
+
+  const reward =
+    offer.reward ??
+    offer.reward_amount ??
+    offer.amount ??
+    offer.payout ??
+    0
+
+  const network =
+    offer.network ||
+    offer.provider ||
+    offer.source ||
+    ''
+
+  const category =
+    offer.category ||
+    offer.type ||
+    offer.offer_type ||
+    ''
+
+  const trackingUrl =
+    offer.tracking_url ||
+    offer.trackingUrl ||
+    offer.click_url ||
+    offer.clickUrl ||
+    offer.url ||
+    offer.link
+
+  return (
+    <article className="offer-card">
+      <div className="offer-top">
+        {image ? (
+          <img
+            src={image}
+            alt=""
+            loading="lazy"
+          />
+        ) : (
+          <div className="offer-fallback">
+            ★
+          </div>
+        )}
+
+        <div>
+          <h3>{title}</h3>
+
+          <p>
+            {String(description).slice(0, 140)}
+          </p>
+
+          {(network || category) && (
+            <small>
+              {[network, category]
+                .filter(Boolean)
+                .join(' · ')}
+            </small>
+          )}
+        </div>
+      </div>
+
+      <div className="offer-bottom">
+        <div>
+          <span>Reward</span>
+          <b>{money(reward)}</b>
+        </div>
+
+        <button
+          className="primary small"
+          disabled={!trackingUrl}
+          onClick={() => {
+            if (!trackingUrl) return
+
+            window.open(
+              trackingUrl,
+              '_blank',
+              'noopener,noreferrer'
+            )
+          }}
+        >
+          Start
+          <ExternalLink size={15} />
+        </button>
+      </div>
+    </article>
+  )
+}
+
 function Activity({ history }) {
   if (!history.length) {
     return (
@@ -531,11 +674,17 @@ function Activity({ history }) {
   const rewardText = item => {
     const amount = money(item.reward)
 
-    if (item.status === 'reversed' || item.status === 'rejected') {
+    if (
+      item.status === 'reversed' ||
+      item.status === 'rejected'
+    ) {
       return `-${amount}`
     }
 
-    if (item.status === 'held' || item.status === 'pending') {
+    if (
+      item.status === 'held' ||
+      item.status === 'pending'
+    ) {
       return `Pending ${amount}`
     }
 
@@ -551,7 +700,9 @@ function Activity({ history }) {
 
             <span>
               {item.source} · {item.status} ·{' '}
-              {new Date(item.created_at).toLocaleString()}
+              {new Date(
+                item.created_at
+              ).toLocaleString()}
             </span>
           </div>
 
