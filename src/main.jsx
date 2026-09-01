@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
@@ -31,8 +30,14 @@ function Auth({ onAuthed }) {
     try {
       const result =
         mode === 'login'
-          ? await supabase.auth.signInWithPassword({ email, password })
-          : await supabase.auth.signUp({ email, password })
+          ? await supabase.auth.signInWithPassword({
+              email,
+              password
+            })
+          : await supabase.auth.signUp({
+              email,
+              password
+            })
 
       const { data, error } = result
 
@@ -44,11 +49,17 @@ function Auth({ onAuthed }) {
       if (data.session) {
         onAuthed(data.session)
       } else {
-        setMsg('Account created. Check your email if confirmation is enabled.')
+        setMsg(
+          'Account created. Check your email if confirmation is enabled.'
+        )
       }
     } catch (err) {
       console.error(err)
-      setMsg(err?.message || 'Could not connect to Supabase.')
+
+      setMsg(
+        err?.message ||
+          'Could not connect to Supabase.'
+      )
     } finally {
       setBusy(false)
     }
@@ -61,14 +72,22 @@ function Auth({ onAuthed }) {
       <h1>Earn smarter.</h1>
 
       <p>
-        Complete verified offers. Build your balance. Withdraw when ready.
+        Complete verified offers. Build your balance.
+        Withdraw when ready.
       </p>
 
-      <form className="auth-card" onSubmit={submit}>
+      <form
+        className="auth-card"
+        onSubmit={submit}
+      >
         <div className="seg">
           <button
             type="button"
-            className={mode === 'login' ? 'active' : ''}
+            className={
+              mode === 'login'
+                ? 'active'
+                : ''
+            }
             onClick={() => {
               setMode('login')
               setMsg('')
@@ -79,7 +98,11 @@ function Auth({ onAuthed }) {
 
           <button
             type="button"
-            className={mode === 'signup' ? 'active' : ''}
+            className={
+              mode === 'signup'
+                ? 'active'
+                : ''
+            }
             onClick={() => {
               setMode('signup')
               setMsg('')
@@ -93,7 +116,9 @@ function Auth({ onAuthed }) {
           type="email"
           placeholder="Email"
           value={email}
-          onChange={e => setEmail(e.target.value)}
+          onChange={e =>
+            setEmail(e.target.value)
+          }
           required
           autoComplete="email"
         />
@@ -102,13 +127,23 @@ function Auth({ onAuthed }) {
           type="password"
           placeholder="Password"
           value={password}
-          onChange={e => setPassword(e.target.value)}
+          onChange={e =>
+            setPassword(e.target.value)
+          }
           required
           minLength={6}
-          autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+          autoComplete={
+            mode === 'login'
+              ? 'current-password'
+              : 'new-password'
+          }
         />
 
-        <button className="primary" type="submit" disabled={busy}>
+        <button
+          className="primary"
+          type="submit"
+          disabled={busy}
+        >
           {busy
             ? 'Please wait…'
             : mode === 'login'
@@ -116,7 +151,11 @@ function Auth({ onAuthed }) {
             : 'Create account'}
         </button>
 
-        {msg && <div className="notice">{msg}</div>}
+        {msg && (
+          <div className="notice">
+            {msg}
+          </div>
+        )}
       </form>
     </div>
   )
@@ -127,30 +166,63 @@ function App() {
   const [tab, setTab] = useState('home')
 
   const [wallet, setWallet] = useState(null)
-  const [cpagripHistory, setCpagripHistory] = useState([])
-  const [offerwallHistory, setOfferwallHistory] = useState([])
-  const [withdrawals, setWithdrawals] = useState([])
+
+  const [
+    cpagripHistory,
+    setCpagripHistory
+  ] = useState([])
+
+  const [
+    offerwallHistory,
+    setOfferwallHistory
+  ] = useState([])
+
+  const [
+    offerActivity,
+    setOfferActivity
+  ] = useState([])
+
+  const [
+    withdrawals,
+    setWithdrawals
+  ] = useState([])
 
   const [offers, setOffers] = useState([])
-  const [loadingOffers, setLoadingOffers] = useState(false)
-  const [offerError, setOfferError] = useState('')
 
-  const [withdrawAmount, setWithdrawAmount] = useState('')
+  const [
+    loadingOffers,
+    setLoadingOffers
+  ] = useState(false)
+
+  const [
+    offerError,
+    setOfferError
+  ] = useState('')
+
+  const [
+    withdrawAmount,
+    setWithdrawAmount
+  ] = useState('')
+
   const [upi, setUpi] = useState('')
   const [message, setMessage] = useState('')
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session)
-    })
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        setSession(data.session)
+      })
 
-    const { data: sub } = supabase.auth.onAuthStateChange(
-      (_event, newSession) => {
-        setSession(newSession)
-      }
-    )
+    const { data: sub } =
+      supabase.auth.onAuthStateChange(
+        (_event, newSession) => {
+          setSession(newSession)
+        }
+      )
 
-    return () => sub.subscription.unsubscribe()
+    return () =>
+      sub.subscription.unsubscribe()
   }, [])
 
   const user = session?.user
@@ -162,6 +234,7 @@ function App() {
       { data: walletData },
       { data: cpagripData },
       { data: offerwallData },
+      { data: activityData },
       { data: withdrawalData },
       { data: profileData }
     ] = await Promise.all([
@@ -175,21 +248,38 @@ function App() {
         .from('offer_completions')
         .select('*')
         .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
+        .order('created_at', {
+          ascending: false
+        })
         .limit(20),
 
       supabase
-        .from('offerwallad_transactions')
+        .from(
+          'offerwallad_transactions'
+        )
         .select('*')
         .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
+        .order('created_at', {
+          ascending: false
+        })
         .limit(20),
+
+      supabase
+        .from('offer_activity')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', {
+          ascending: false
+        })
+        .limit(30),
 
       supabase
         .from('withdrawals')
         .select('*')
         .eq('user_id', user.id)
-        .order('requested_at', { ascending: false })
+        .order('requested_at', {
+          ascending: false
+        })
         .limit(20),
 
       supabase
@@ -207,9 +297,21 @@ function App() {
       }
     )
 
-    setCpagripHistory(cpagripData || [])
-    setOfferwallHistory(offerwallData || [])
-    setWithdrawals(withdrawalData || [])
+    setCpagripHistory(
+      cpagripData || []
+    )
+
+    setOfferwallHistory(
+      offerwallData || []
+    )
+
+    setOfferActivity(
+      activityData || []
+    )
+
+    setWithdrawals(
+      withdrawalData || []
+    )
 
     if (profileData?.upi_id) {
       setUpi(profileData.upi_id)
@@ -223,12 +325,18 @@ function App() {
     setOfferError('')
 
     try {
-      const { data, error } = await supabase.functions.invoke(
-        'offerwallad-offers'
-      )
+      const {
+        data,
+        error
+      } =
+        await supabase.functions.invoke(
+          'offerwallad-offers'
+        )
 
       if (error) {
-        setOfferError(error.message)
+        setOfferError(
+          error.message
+        )
         return
       }
 
@@ -236,12 +344,22 @@ function App() {
         data?.offers ||
         data?.data ||
         data?.results ||
-        (Array.isArray(data) ? data : [])
+        (Array.isArray(data)
+          ? data
+          : [])
 
-      setOffers(Array.isArray(arr) ? arr : [])
+      setOffers(
+        Array.isArray(arr)
+          ? arr
+          : []
+      )
     } catch (err) {
       console.error(err)
-      setOfferError(err?.message || 'Could not load offers.')
+
+      setOfferError(
+        err?.message ||
+          'Could not load offers.'
+      )
     } finally {
       setLoadingOffers(false)
     }
@@ -254,26 +372,43 @@ function App() {
   }, [user?.id])
 
   useEffect(() => {
-    if (tab === 'earn' && offers.length === 0) {
+    if (
+      tab === 'earn' &&
+      offers.length === 0
+    ) {
       loadOffers()
     }
   }, [tab])
 
   const doWithdraw = async e => {
     e.preventDefault()
+
     setMessage('')
 
-    const amount = Number(withdrawAmount)
+    const amount = Number(
+      withdrawAmount
+    )
 
-    if (!Number.isFinite(amount) || amount <= 0) {
-      setMessage('Enter a valid withdrawal amount.')
+    if (
+      !Number.isFinite(amount) ||
+      amount <= 0
+    ) {
+      setMessage(
+        'Enter a valid withdrawal amount.'
+      )
       return
     }
 
-    const { data, error } = await supabase.rpc('request_withdrawal', {
-      p_amount_usd: amount,
-      p_upi_id: upi
-    })
+    const {
+      data,
+      error
+    } = await supabase.rpc(
+      'request_withdrawal',
+      {
+        p_amount_usd: amount,
+        p_upi_id: upi
+      }
+    )
 
     if (error) {
       setMessage(error.message)
@@ -281,99 +416,219 @@ function App() {
     }
 
     if (!data?.ok) {
-      setMessage(data?.error || 'Withdrawal failed')
+      setMessage(
+        data?.error ||
+          'Withdrawal failed'
+      )
       return
     }
 
-    setMessage(`Withdrawal requested: ${money(amount)}`)
+    setMessage(
+      `Withdrawal requested: ${money(
+        amount
+      )}`
+    )
+
     setWithdrawAmount('')
+
     refreshData()
   }
 
   if (!session) {
-    return <Auth onAuthed={setSession} />
+    return (
+      <Auth
+        onAuthed={setSession}
+      />
+    )
   }
 
   const nav = [
     ['home', Home, 'Home'],
     ['earn', Gift, 'Earn'],
-    ['wallet', Wallet, 'Wallet'],
-    ['profile', User, 'Profile']
+    [
+      'wallet',
+      Wallet,
+      'Wallet'
+    ],
+    [
+      'profile',
+      User,
+      'Profile'
+    ]
   ]
 
-  const combinedHistory = [
-    ...cpagripHistory.map(item => ({
-      id: `cpagrip-${item.id}`,
-      title: `Offer #${item.offer_id}`,
-      reward: item.user_reward_usd,
-      status: item.status,
-      created_at: item.created_at,
-      source: 'CPAGrip'
-    })),
-
-    ...offerwallHistory.map(item => ({
-      id: `offerwall-${item.transaction_id}`,
-      title: item.offer_name || `Offer #${item.offer_id || 'Unknown'}`,
-      reward: item.user_reward,
-      status: item.status,
-      created_at: item.created_at,
-      source: 'Offerwall.ad'
+  const startedHistory =
+    offerActivity.map(item => ({
+      id: `started-${item.id}`,
+      title:
+        item.offer_name ||
+        `Offer #${
+          item.offer_id ||
+          'Unknown'
+        }`,
+      reward: item.reward,
+      status:
+        item.status ||
+        'started',
+      created_at:
+        item.created_at,
+      source:
+        item.network ||
+        'Offerwall.ad',
+      activityType: 'started'
     }))
+
+  const conversionHistory =
+    offerwallHistory.map(item => ({
+      id: `offerwall-${item.transaction_id}`,
+      title:
+        item.offer_name ||
+        `Offer #${
+          item.offer_id ||
+          'Unknown'
+        }`,
+      reward:
+        item.user_reward,
+      status: item.status,
+      created_at:
+        item.created_at,
+      source: 'Offerwall.ad',
+      activityType:
+        'conversion'
+    }))
+
+  const cpagripConverted =
+    cpagripHistory.map(item => ({
+      id: `cpagrip-${item.id}`,
+      title:
+        `Offer #${item.offer_id}`,
+      reward:
+        item.user_reward_usd,
+      status: item.status,
+      created_at:
+        item.created_at,
+      source: 'CPAGrip',
+      activityType:
+        'conversion'
+    }))
+
+  const combinedHistory = [
+    ...startedHistory,
+    ...conversionHistory,
+    ...cpagripConverted
   ]
     .sort(
       (a, b) =>
-        new Date(b.created_at).getTime() -
-        new Date(a.created_at).getTime()
+        new Date(
+          b.created_at
+        ).getTime() -
+        new Date(
+          a.created_at
+        ).getTime()
     )
-    .slice(0, 20)
+    .slice(0, 30)
 
   return (
     <div className="app">
       <header>
         <div>
-          <span className="eyebrow">AVAILABLE</span>
-          <strong>{money(wallet?.withdrawable_balance)}</strong>
+          <span className="eyebrow">
+            AVAILABLE
+          </span>
+
+          <strong>
+            {money(
+              wallet?.withdrawable_balance
+            )}
+          </strong>
         </div>
 
-        <button className="icon-btn" onClick={refreshData}>
-          <RefreshCcw size={18} />
+        <button
+          className="icon-btn"
+          onClick={refreshData}
+        >
+          <RefreshCcw
+            size={18}
+          />
         </button>
       </header>
 
       <main>
-        {message && <div className="notice">{message}</div>}
+        {message && (
+          <div className="notice">
+            {message}
+          </div>
+        )}
 
         {tab === 'home' && (
           <>
             <section className="hero-card">
-              <span>Your balance</span>
-              <h2>{money(wallet?.withdrawable_balance)}</h2>
-              <p>{money(wallet?.pending_balance)} pending</p>
+              <span>
+                Your balance
+              </span>
+
+              <h2>
+                {money(
+                  wallet?.withdrawable_balance
+                )}
+              </h2>
+
+              <p>
+                {money(
+                  wallet?.pending_balance
+                )}{' '}
+                pending
+              </p>
 
               <button
                 className="primary"
-                onClick={() => setTab('earn')}
+                onClick={() =>
+                  setTab('earn')
+                }
               >
                 Start earning
-                <ArrowRight size={18} />
+
+                <ArrowRight
+                  size={18}
+                />
               </button>
             </section>
 
             <div className="stats">
               <div>
-                <span>Lifetime</span>
-                <b>{money(wallet?.lifetime_earned)}</b>
+                <span>
+                  Lifetime
+                </span>
+
+                <b>
+                  {money(
+                    wallet?.lifetime_earned
+                  )}
+                </b>
               </div>
 
               <div>
-                <span>Offers</span>
-                <b>{combinedHistory.length}</b>
+                <span>
+                  Activity
+                </span>
+
+                <b>
+                  {
+                    combinedHistory.length
+                  }
+                </b>
               </div>
             </div>
 
-            <h3>Recent activity</h3>
+            <h3>
+              Recent activity
+            </h3>
 
-            <Activity history={combinedHistory} />
+            <Activity
+              history={
+                combinedHistory
+              }
+            />
           </>
         )}
 
@@ -381,16 +636,25 @@ function App() {
           <>
             <div className="section-head">
               <div>
-                <span className="eyebrow">DISCOVER</span>
-                <h2>Earn offers</h2>
+                <span className="eyebrow">
+                  DISCOVER
+                </span>
+
+                <h2>
+                  Earn offers
+                </h2>
               </div>
 
               <button
                 className="icon-btn"
                 onClick={loadOffers}
-                disabled={loadingOffers}
+                disabled={
+                  loadingOffers
+                }
               >
-                <RefreshCcw size={18} />
+                <RefreshCcw
+                  size={18}
+                />
               </button>
             </div>
 
@@ -408,65 +672,123 @@ function App() {
 
             {!loadingOffers &&
               !offerError &&
-              offers.length === 0 && (
+              offers.length ===
+                0 && (
                 <div className="empty">
-                  No offers available right now.
+                  No offers
+                  available right
+                  now.
                 </div>
               )}
 
             <div className="offer-grid">
-              {offers.map((offer, index) => (
-                <OfferCard
-                  key={
-                    offer.id ||
-                    offer.offer_id ||
-                    offer.offerId ||
-                    index
-                  }
-                  offer={offer}
-                />
-              ))}
+              {offers.map(
+                (
+                  offer,
+                  index
+                ) => (
+                  <OfferCard
+                    key={
+                      offer.id ||
+                      offer.offer_id ||
+                      offer.offerId ||
+                      index
+                    }
+                    offer={
+                      offer
+                    }
+                    user={
+                      user
+                    }
+                    onStarted={
+                      refreshData
+                    }
+                  />
+                )
+              )}
             </div>
 
             <p
               style={{
                 opacity: 0.65,
-                fontSize: '12px',
-                marginTop: '12px'
+                fontSize:
+                  '12px',
+                marginTop:
+                  '12px'
               }}
             >
-              Rewards are credited only after the advertiser confirms completion.
+              Rewards are credited
+              only after the
+              advertiser confirms
+              completion.
             </p>
           </>
         )}
 
         {tab === 'wallet' && (
           <>
-            <h2>Wallet</h2>
+            <h2>
+              Wallet
+            </h2>
 
             <div className="wallet-grid">
               <div>
-                <span>Withdrawable</span>
-                <b>{money(wallet?.withdrawable_balance)}</b>
+                <span>
+                  Withdrawable
+                </span>
+
+                <b>
+                  {money(
+                    wallet?.withdrawable_balance
+                  )}
+                </b>
               </div>
 
               <div>
-                <span>Pending</span>
-                <b>{money(wallet?.pending_balance)}</b>
+                <span>
+                  Pending
+                </span>
+
+                <b>
+                  {money(
+                    wallet?.pending_balance
+                  )}
+                </b>
               </div>
 
               <div>
-                <span>Lifetime</span>
-                <b>{money(wallet?.lifetime_earned)}</b>
+                <span>
+                  Lifetime
+                </span>
+
+                <b>
+                  {money(
+                    wallet?.lifetime_earned
+                  )}
+                </b>
               </div>
             </div>
 
-            <form className="withdraw-card" onSubmit={doWithdraw}>
-              <h3>Withdraw to UPI</h3>
+            <form
+              className="withdraw-card"
+              onSubmit={
+                doWithdraw
+              }
+            >
+              <h3>
+                Withdraw to UPI
+              </h3>
 
               <input
-                value={withdrawAmount}
-                onChange={e => setWithdrawAmount(e.target.value)}
+                value={
+                  withdrawAmount
+                }
+                onChange={e =>
+                  setWithdrawAmount(
+                    e.target
+                      .value
+                  )
+                }
                 type="number"
                 min="1"
                 step="0.01"
@@ -476,7 +798,12 @@ function App() {
 
               <input
                 value={upi}
-                onChange={e => setUpi(e.target.value)}
+                onChange={e =>
+                  setUpi(
+                    e.target
+                      .value
+                  )
+                }
                 placeholder="yourname@upi"
                 required
               />
@@ -486,53 +813,91 @@ function App() {
               </button>
 
               <small>
-                Minimum withdrawal is currently $1. Requests are manually reviewed.
+                Minimum withdrawal
+                is currently $1.
+                Requests are
+                manually reviewed.
               </small>
             </form>
 
-            <h3>Withdrawals</h3>
+            <h3>
+              Withdrawals
+            </h3>
 
             <div className="list">
-              {withdrawals.length === 0 && (
+              {withdrawals.length ===
+                0 && (
                 <div className="empty">
-                  No withdrawal requests yet.
+                  No withdrawal
+                  requests yet.
                 </div>
               )}
 
-              {withdrawals.map(w => (
-                <div className="row" key={w.id}>
-                  <div>
-                    <b>{money(w.amount_usd)}</b>
-                    <span>{w.upi_id}</span>
-                  </div>
+              {withdrawals.map(
+                w => (
+                  <div
+                    className="row"
+                    key={w.id}
+                  >
+                    <div>
+                      <b>
+                        {money(
+                          w.amount_usd
+                        )}
+                      </b>
 
-                  <em className={`status ${w.status}`}>
-                    {w.status}
-                  </em>
-                </div>
-              ))}
+                      <span>
+                        {
+                          w.upi_id
+                        }
+                      </span>
+                    </div>
+
+                    <em
+                      className={`status ${w.status}`}
+                    >
+                      {
+                        w.status
+                      }
+                    </em>
+                  </div>
+                )
+              )}
             </div>
           </>
         )}
 
-        {tab === 'profile' && (
+        {tab ===
+          'profile' && (
           <>
-            <h2>Profile</h2>
+            <h2>
+              Profile
+            </h2>
 
             <div className="profile-card">
-              <span>Signed in as</span>
+              <span>
+                Signed in as
+              </span>
 
-              <b>{user.email}</b>
+              <b>
+                {user.email}
+              </b>
 
               <small>
-                User ID: {user.id}
+                User ID:{' '}
+                {user.id}
               </small>
 
               <button
                 className="ghost danger"
-                onClick={() => supabase.auth.signOut()}
+                onClick={() =>
+                  supabase.auth.signOut()
+                }
               >
-                <LogOut size={18} />
+                <LogOut
+                  size={18}
+                />
+
                 Sign out
               </button>
             </div>
@@ -541,22 +906,43 @@ function App() {
       </main>
 
       <nav>
-        {nav.map(([id, Icon, label]) => (
-          <button
-            key={id}
-            className={tab === id ? 'active' : ''}
-            onClick={() => setTab(id)}
-          >
-            <Icon size={20} />
-            <span>{label}</span>
-          </button>
-        ))}
+        {nav.map(
+          ([
+            id,
+            Icon,
+            label
+          ]) => (
+            <button
+              key={id}
+              className={
+                tab === id
+                  ? 'active'
+                  : ''
+              }
+              onClick={() =>
+                setTab(id)
+              }
+            >
+              <Icon
+                size={20}
+              />
+
+              <span>
+                {label}
+              </span>
+            </button>
+          )
+        )}
       </nav>
     </div>
   )
 }
 
-function OfferCard({ offer }) {
+function OfferCard({
+  offer,
+  user,
+  onStarted
+}) {
   const title =
     offer.title ||
     offer.name ||
@@ -587,7 +973,7 @@ function OfferCard({ offer }) {
     offer.network ||
     offer.provider ||
     offer.source ||
-    ''
+    'Offerwall.ad'
 
   const category =
     offer.category ||
@@ -602,6 +988,67 @@ function OfferCard({ offer }) {
     offer.clickUrl ||
     offer.url ||
     offer.link
+
+  const offerId =
+    offer.id ||
+    offer.offer_id ||
+    offer.offerId ||
+    title
+
+  const startOffer =
+    async () => {
+      if (
+        !trackingUrl ||
+        !user
+      ) {
+        return
+      }
+
+      const {
+        error
+      } =
+        await supabase
+          .from(
+            'offer_activity'
+          )
+          .insert({
+            user_id:
+              user.id,
+            offer_id:
+              String(
+                offerId
+              ),
+            offer_name:
+              title,
+            reward:
+              Number(
+                reward || 0
+              ),
+            currency:
+              offer.currency ||
+              'USD',
+            network,
+            tracking_url:
+              trackingUrl,
+            status:
+              'started'
+          })
+
+      if (error) {
+        console.error(
+          'Could not save offer start',
+          error
+        )
+      } else {
+        await onStarted?.()
+      }
+
+      window.open(
+        trackingUrl,
+        '_blank',
+        'noopener,noreferrer'
+      )
+    }
 
   return (
     <article className="offer-card">
@@ -619,17 +1066,32 @@ function OfferCard({ offer }) {
         )}
 
         <div>
-          <h3>{title}</h3>
+          <h3>
+            {title}
+          </h3>
 
           <p>
-            {String(description).slice(0, 140)}
+            {String(
+              description
+            ).slice(
+              0,
+              140
+            )}
           </p>
 
-          {(network || category) && (
+          {(network ||
+            category) && (
             <small>
-              {[network, category]
-                .filter(Boolean)
-                .join(' · ')}
+              {[
+                network,
+                category
+              ]
+                .filter(
+                  Boolean
+                )
+                .join(
+                  ' · '
+                )}
             </small>
           )}
         </div>
@@ -637,84 +1099,131 @@ function OfferCard({ offer }) {
 
       <div className="offer-bottom">
         <div>
-          <span>Reward</span>
-          <b>{money(reward)}</b>
+          <span>
+            Reward
+          </span>
+
+          <b>
+            {money(
+              reward
+            )}
+          </b>
         </div>
 
         <button
           className="primary small"
-          disabled={!trackingUrl}
-          onClick={() => {
-            if (!trackingUrl) return
-
-            window.open(
-              trackingUrl,
-              '_blank',
-              'noopener,noreferrer'
-            )
-          }}
+          disabled={
+            !trackingUrl
+          }
+          onClick={
+            startOffer
+          }
         >
           Start
-          <ExternalLink size={15} />
+
+          <ExternalLink
+            size={15}
+          />
         </button>
       </div>
     </article>
   )
 }
 
-function Activity({ history }) {
+function Activity({
+  history
+}) {
   if (!history.length) {
     return (
       <div className="empty">
-        Your completed offers will appear here.
+        Your offer activity
+        will appear here.
       </div>
     )
   }
 
-  const rewardText = item => {
-    const amount = money(item.reward)
+  const rewardText =
+    item => {
+      const amount =
+        money(
+          item.reward
+        )
 
-    if (
-      item.status === 'reversed' ||
-      item.status === 'rejected'
-    ) {
-      return `-${amount}`
+      if (
+        item.status ===
+          'reversed' ||
+        item.status ===
+          'rejected'
+      ) {
+        return `-${amount}`
+      }
+
+      if (
+        item.status ===
+          'held' ||
+        item.status ===
+          'pending'
+      ) {
+        return `Pending ${amount}`
+      }
+
+      if (
+        item.status ===
+        'started'
+      ) {
+        return 'Started'
+      }
+
+      if (
+        item.status ===
+        'confirmed'
+      ) {
+        return `+${amount}`
+      }
+
+      return amount
     }
-
-    if (
-      item.status === 'held' ||
-      item.status === 'pending'
-    ) {
-      return `Pending ${amount}`
-    }
-
-    return `+${amount}`
-  }
 
   return (
     <div className="list">
-      {history.map(item => (
-        <div className="row" key={item.id}>
-          <div>
-            <b>{item.title}</b>
+      {history.map(
+        item => (
+          <div
+            className="row"
+            key={item.id}
+          >
+            <div>
+              <b>
+                {item.title}
+              </b>
 
-            <span>
-              {item.source} · {item.status} ·{' '}
-              {new Date(
-                item.created_at
-              ).toLocaleString()}
-            </span>
+              <span>
+                {item.source}
+                {' · '}
+                {item.status}
+                {' · '}
+                {new Date(
+                  item.created_at
+                ).toLocaleString()}
+              </span>
+            </div>
+
+            <strong>
+              {rewardText(
+                item
+              )}
+            </strong>
           </div>
-
-          <strong>
-            {rewardText(item)}
-          </strong>
-        </div>
-      ))}
+        )
+      )}
     </div>
   )
 }
 
-createRoot(document.getElementById('root')).render(
+createRoot(
+  document.getElementById(
+    'root'
+  )
+).render(
   <App />
 )
