@@ -14,61 +14,120 @@ function Auth({ onAuthed }) {
   const [busy, setBusy] = useState(false)
 
   const submit = async (e) => {
-  e.preventDefault()
-  setBusy(true)
-  setMsg('')
+    e.preventDefault()
+    setBusy(true)
+    setMsg('')
 
-  try {
-    let result
+    try {
+      let result
 
-    if (mode === 'login') {
-      result = await supabase.auth.signInWithPassword({
-        email,
-        password
-      })
-    } else {
-      result = await supabase.auth.signUp({
-        email,
-        password
-      })
+      if (mode === 'login') {
+        result = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        })
+      } else {
+        result = await supabase.auth.signUp({
+          email,
+          password,
+        })
+      }
+
+      const { data, error } = result
+
+      if (error) {
+        setMsg(error.message)
+        return
+      }
+
+      if (data.session) {
+        onAuthed(data.session)
+      } else {
+        setMsg(
+          'Account created. Check your email if email confirmation is enabled.'
+        )
+      }
+    } catch (err) {
+      console.error(err)
+      setMsg(err?.message || 'Could not connect to Supabase.')
+    } finally {
+      setBusy(false)
     }
-
-    const { data, error } = result
-
-    if (error) {
-      setMsg(error.message)
-      return
-    }
-
-    if (data.session) {
-      onAuthed(data.session)
-    } else {
-      setMsg('Account created. Check your email if confirmation is required.')
-    }
-  } catch (err) {
-    setMsg(err?.message || 'Could not connect to Supabase.')
-  } finally {
-    setBusy(false)
   }
-  }
 
-  return <div className="auth-shell">
-    <div className="brand-badge">E</div>
-    <h1>Earn smarter.</h1>
-    <p>Complete verified offers. Build your balance. Withdraw when ready.</p>
-    <form className="auth-card" onSubmit={submit}>
-      <div className="seg">
-        <button type="button" className={mode==='login'?'active':''} onClick={()=>setMode('login')}>Login</button>
-        <button type="button" className={mode==='signup'?'active':''} onClick={()=>setMode('signup')}>Sign up</button>
-      </div>
-      <input value={email} onChange={e=>setEmail(e.target.value)} type="email" placeholder="Email" required />
-      <input value={password} onChange={e=>setPassword(e.target.value)} type="password" placeholder="Password" minLength="6" required />
-      <button className="primary" disabled={busy}>{busy ? 'Please wait…' : mode === 'login' ? 'Login' : 'Create account'}</button>
-      {msg && <div className="notice">{msg}</div>}
-    </form>
-  </div>
+  return (
+    <div className="auth-shell">
+      <div className="brand-badge">E</div>
+
+      <h1>Earn smarter.</h1>
+
+      <p>
+        Complete verified offers. Build your balance. Withdraw when ready.
+      </p>
+
+      <form className="auth-card" onSubmit={submit}>
+        <div className="seg">
+          <button
+            type="button"
+            className={mode === 'login' ? 'active' : ''}
+            onClick={() => {
+              setMode('login')
+              setMsg('')
+            }}
+          >
+            Login
+          </button>
+
+          <button
+            type="button"
+            className={mode === 'signup' ? 'active' : ''}
+            onClick={() => {
+              setMode('signup')
+              setMsg('')
+            }}
+          >
+            Sign up
+          </button>
+        </div>
+
+        <input
+          type="email"
+          placeholder="Email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+          autoComplete="email"
+        />
+
+        <input
+          type="password"
+          placeholder="Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+          minLength={6}
+          autoComplete={
+            mode === 'login' ? 'current-password' : 'new-password'
+          }
+        />
+
+        <button className="primary" type="submit" disabled={busy}>
+          {busy
+            ? 'Please wait…'
+            : mode === 'login'
+            ? 'Login'
+            : 'Create account'}
+        </button>
+
+        {msg && (
+          <div className="notice">
+            {msg}
+          </div>
+        )}
+      </form>
+    </div>
+  )
 }
-
 function App() {
   const [session, setSession] = useState(null)
   const [tab, setTab] = useState('home')
