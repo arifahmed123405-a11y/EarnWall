@@ -10,6 +10,7 @@ import {
   RefreshCcw,
   ExternalLink
 } from 'lucide-react'
+
 import { supabase } from './supabase'
 import './styles.css'
 
@@ -24,6 +25,7 @@ function Auth({ onAuthed }) {
 
   const submit = async e => {
     e.preventDefault()
+
     setBusy(true)
     setMsg('')
 
@@ -49,9 +51,7 @@ function Auth({ onAuthed }) {
       if (data.session) {
         onAuthed(data.session)
       } else {
-        setMsg(
-          'Account created. Check your email if confirmation is enabled.'
-        )
+        setMsg('Account created. Check your email if confirmation is enabled.')
       }
     } catch (err) {
       console.error(err)
@@ -72,7 +72,8 @@ function Auth({ onAuthed }) {
       <h1>Earn smarter.</h1>
 
       <p>
-        Complete verified offers. Build your balance.
+        Complete verified offers.
+        Build your balance.
         Withdraw when ready.
       </p>
 
@@ -120,7 +121,6 @@ function Auth({ onAuthed }) {
             setEmail(e.target.value)
           }
           required
-          autoComplete="email"
         />
 
         <input
@@ -132,16 +132,10 @@ function Auth({ onAuthed }) {
           }
           required
           minLength={6}
-          autoComplete={
-            mode === 'login'
-              ? 'current-password'
-              : 'new-password'
-          }
         />
 
         <button
           className="primary"
-          type="submit"
           disabled={busy}
         >
           {busy
@@ -168,13 +162,8 @@ function App() {
   const [wallet, setWallet] = useState(null)
 
   const [
-    cpagripHistory,
-    setCpagripHistory
-  ] = useState([])
-
-  const [
-    offerwallHistory,
-    setOfferwallHistory
+    lootwallsHistory,
+    setLootwallsHistory
   ] = useState([])
 
   const [
@@ -214,7 +203,7 @@ function App() {
         setSession(data.session)
       })
 
-    const { data: sub } =
+    const { data: listener } =
       supabase.auth.onAuthStateChange(
         (_event, newSession) => {
           setSession(newSession)
@@ -222,7 +211,7 @@ function App() {
       )
 
     return () =>
-      sub.subscription.unsubscribe()
+      listener.subscription.unsubscribe()
   }, [])
 
   const user = session?.user
@@ -231,12 +220,11 @@ function App() {
     if (!user) return
 
     const [
-      { data: walletData },
-      { data: cpagripData },
-      { data: offerwallData },
-      { data: activityData },
-      { data: withdrawalData },
-      { data: profileData }
+      walletResult,
+      lootwallsResult,
+      activityResult,
+      withdrawalResult,
+      profileResult
     ] = await Promise.all([
       supabase
         .from('wallets')
@@ -245,29 +233,19 @@ function App() {
         .single(),
 
       supabase
-        .from('offer_completions')
+        .from('lootwalls_transactions')
         .select('*')
         .eq('user_id', user.id)
         .order('created_at', {
           ascending: false
         })
-        .limit(20),
-
-      supabase
-        .from(
-          'offerwallad_transactions'
-        )
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', {
-          ascending: false
-        })
-        .limit(20),
+        .limit(30),
 
       supabase
         .from('offer_activity')
         .select('*')
         .eq('user_id', user.id)
+        .eq('network', 'Lootwalls')
         .order('created_at', {
           ascending: false
         })
@@ -289,32 +267,24 @@ function App() {
         .single()
     ])
 
-    setWallet(
-      walletData || {
-        withdrawable_balance: 0,
-        pending_balance: 0,
-        lifetime_earned: 0
-      }
-    )
+    if (walletResult.data) {
+      setWallet(walletResult.data)
+    }
 
-    setCpagripHistory(
-      cpagripData || []
-    )
-
-    setOfferwallHistory(
-      offerwallData || []
+    setLootwallsHistory(
+      lootwallsResult.data || []
     )
 
     setOfferActivity(
-      activityData || []
+      activityResult.data || []
     )
 
     setWithdrawals(
-      withdrawalData || []
+      withdrawalResult.data || []
     )
 
-    if (profileData?.upi_id) {
-      setUpi(profileData.upi_id)
+    if (profileResult.data?.upi_id) {
+      setUpi(profileResult.data.upi_id)
     }
   }
 
@@ -330,17 +300,21 @@ function App() {
         error
       } =
         await supabase.functions.invoke(
-          'offerwallad-offers'
+          'lootwalls-offers'
         )
 
       if (error) {
+        console.error(error)
+
         setOfferError(
-          error.message
+          error.message ||
+            'Could not load Lootwalls offers.'
         )
+
         return
       }
 
-      const arr =
+      const list =
         data?.offers ||
         data?.data ||
         data?.results ||
@@ -349,8 +323,8 @@ function App() {
           : [])
 
       setOffers(
-        Array.isArray(arr)
-          ? arr
+        Array.isArray(list)
+          ? list
           : []
       )
     } catch (err) {
@@ -385,9 +359,8 @@ function App() {
 
     setMessage('')
 
-    const amount = Number(
-      withdrawAmount
-    )
+    const amount =
+      Number(withdrawAmount)
 
     if (
       !Number.isFinite(amount) ||
@@ -418,8 +391,9 @@ function App() {
     if (!data?.ok) {
       setMessage(
         data?.error ||
-          'Withdrawal failed'
+          'Withdrawal failed.'
       )
+
       return
     }
 
@@ -436,86 +410,102 @@ function App() {
 
   if (!session) {
     return (
-      <Auth
-        onAuthed={setSession}
-      />
+      <Auth onAuthed={setSession} />
     )
   }
 
   const nav = [
     ['home', Home, 'Home'],
     ['earn', Gift, 'Earn'],
-    [
-      'wallet',
-      Wallet,
-      'Wallet'
-    ],
-    [
-      'profile',
-      User,
-      'Profile'
-    ]
+    ['wallet', Wallet, 'Wallet'],
+    ['profile', User, 'Profile']
   ]
 
   const startedHistory =
     offerActivity.map(item => ({
       id: `started-${item.id}`,
+
+      offerId:
+        String(
+          item.offer_id || ''
+        ),
+
       title:
         item.offer_name ||
-        `Offer #${
-          item.offer_id ||
-          'Unknown'
-        }`,
-      reward: item.reward,
+        'Lootwalls offer',
+
+      reward:
+        item.reward,
+
       status:
         item.status ||
         'started',
+
       created_at:
         item.created_at,
+
       source:
-        item.network ||
-        'Offerwall.ad',
-      activityType: 'started'
+        'Lootwalls'
     }))
+
+  const completedOfferIds =
+    new Set(
+      lootwallsHistory
+        .map(item =>
+          String(
+            item.offer_id || ''
+          )
+        )
+        .filter(Boolean)
+    )
+
+  const filteredStarted =
+    startedHistory.filter(
+      item =>
+        !item.offerId ||
+        !completedOfferIds.has(
+          item.offerId
+        )
+    )
 
   const conversionHistory =
-    offerwallHistory.map(item => ({
-      id: `offerwall-${item.transaction_id}`,
+    lootwallsHistory.map(item => ({
+      id:
+        `lootwalls-${
+          item.transaction_id ||
+          item.id
+        }`,
+
+      offerId:
+        String(
+          item.offer_id || ''
+        ),
+
       title:
         item.offer_name ||
-        `Offer #${
-          item.offer_id ||
-          'Unknown'
-        }`,
-      reward:
-        item.user_reward,
-      status: item.status,
-      created_at:
-        item.created_at,
-      source: 'Offerwall.ad',
-      activityType:
-        'conversion'
-    }))
+        'Lootwalls reward',
 
-  const cpagripConverted =
-    cpagripHistory.map(item => ({
-      id: `cpagrip-${item.id}`,
-      title:
-        `Offer #${item.offer_id}`,
       reward:
-        item.user_reward_usd,
-      status: item.status,
+        item.user_reward ??
+        item.reward ??
+        item.payout_usd ??
+        item.payout ??
+        0,
+
+      status:
+        item.status ||
+        'confirmed',
+
       created_at:
         item.created_at,
-      source: 'CPAGrip',
-      activityType:
-        'conversion'
+
+      source:
+        'Lootwalls'
     }))
 
   const combinedHistory = [
-    ...startedHistory,
-    ...conversionHistory,
-    ...cpagripConverted
+    ...filteredStarted,
+    ...conversionHistory
   ]
     .sort(
       (a, b) =>
@@ -547,9 +537,7 @@ function App() {
           className="icon-btn"
           onClick={refreshData}
         >
-          <RefreshCcw
-            size={18}
-          />
+          <RefreshCcw size={18} />
         </button>
       </header>
 
@@ -588,9 +576,7 @@ function App() {
               >
                 Start earning
 
-                <ArrowRight
-                  size={18}
-                />
+                <ArrowRight size={18} />
               </button>
             </section>
 
@@ -613,9 +599,7 @@ function App() {
                 </span>
 
                 <b>
-                  {
-                    combinedHistory.length
-                  }
+                  {combinedHistory.length}
                 </b>
               </div>
             </div>
@@ -625,9 +609,7 @@ function App() {
             </h3>
 
             <Activity
-              history={
-                combinedHistory
-              }
+              history={combinedHistory}
             />
           </>
         )}
@@ -637,7 +619,7 @@ function App() {
             <div className="section-head">
               <div>
                 <span className="eyebrow">
-                  DISCOVER
+                  LOOTWALLS
                 </span>
 
                 <h2>
@@ -648,13 +630,9 @@ function App() {
               <button
                 className="icon-btn"
                 onClick={loadOffers}
-                disabled={
-                  loadingOffers
-                }
+                disabled={loadingOffers}
               >
-                <RefreshCcw
-                  size={18}
-                />
+                <RefreshCcw size={18} />
               </button>
             </div>
 
@@ -672,34 +650,25 @@ function App() {
 
             {!loadingOffers &&
               !offerError &&
-              offers.length ===
-                0 && (
+              offers.length === 0 && (
                 <div className="empty">
-                  No offers
-                  available right
-                  now.
+                  No offers available
+                  right now.
                 </div>
               )}
 
             <div className="offer-grid">
               {offers.map(
-                (
-                  offer,
-                  index
-                ) => (
+                (offer, index) => (
                   <OfferCard
                     key={
                       offer.id ||
-                      offer.offer_id ||
                       offer.offerId ||
+                      offer.offer_id ||
                       index
                     }
-                    offer={
-                      offer
-                    }
-                    user={
-                      user
-                    }
+                    offer={offer}
+                    user={user}
                     onStarted={
                       refreshData
                     }
@@ -711,25 +680,22 @@ function App() {
             <p
               style={{
                 opacity: 0.65,
-                fontSize:
-                  '12px',
-                marginTop:
-                  '12px'
+                fontSize: '12px',
+                marginTop: '12px'
               }}
             >
-              Rewards are credited
-              only after the
-              advertiser confirms
-              completion.
+              Complete offers exactly
+              as instructed. Rewards
+              are added only after
+              Lootwalls confirms the
+              conversion.
             </p>
           </>
         )}
 
         {tab === 'wallet' && (
           <>
-            <h2>
-              Wallet
-            </h2>
+            <h2>Wallet</h2>
 
             <div className="wallet-grid">
               <div>
@@ -771,22 +737,17 @@ function App() {
 
             <form
               className="withdraw-card"
-              onSubmit={
-                doWithdraw
-              }
+              onSubmit={doWithdraw}
             >
               <h3>
                 Withdraw to UPI
               </h3>
 
               <input
-                value={
-                  withdrawAmount
-                }
+                value={withdrawAmount}
                 onChange={e =>
                   setWithdrawAmount(
-                    e.target
-                      .value
+                    e.target.value
                   )
                 }
                 type="number"
@@ -800,8 +761,7 @@ function App() {
                 value={upi}
                 onChange={e =>
                   setUpi(
-                    e.target
-                      .value
+                    e.target.value
                   )
                 }
                 placeholder="yourname@upi"
@@ -813,10 +773,10 @@ function App() {
               </button>
 
               <small>
-                Minimum withdrawal
-                is currently $1.
-                Requests are
-                manually reviewed.
+                Minimum withdrawal is
+                currently $1.
+                Requests are manually
+                reviewed.
               </small>
             </form>
 
@@ -833,46 +793,37 @@ function App() {
                 </div>
               )}
 
-              {withdrawals.map(
-                w => (
-                  <div
-                    className="row"
-                    key={w.id}
-                  >
-                    <div>
-                      <b>
-                        {money(
-                          w.amount_usd
-                        )}
-                      </b>
+              {withdrawals.map(w => (
+                <div
+                  className="row"
+                  key={w.id}
+                >
+                  <div>
+                    <b>
+                      {money(
+                        w.amount_usd
+                      )}
+                    </b>
 
-                      <span>
-                        {
-                          w.upi_id
-                        }
-                      </span>
-                    </div>
-
-                    <em
-                      className={`status ${w.status}`}
-                    >
-                      {
-                        w.status
-                      }
-                    </em>
+                    <span>
+                      {w.upi_id}
+                    </span>
                   </div>
-                )
-              )}
+
+                  <em
+                    className={`status ${w.status}`}
+                  >
+                    {w.status}
+                  </em>
+                </div>
+              ))}
             </div>
           </>
         )}
 
-        {tab ===
-          'profile' && (
+        {tab === 'profile' && (
           <>
-            <h2>
-              Profile
-            </h2>
+            <h2>Profile</h2>
 
             <div className="profile-card">
               <span>
@@ -884,8 +835,7 @@ function App() {
               </b>
 
               <small>
-                User ID:{' '}
-                {user.id}
+                User ID: {user.id}
               </small>
 
               <button
@@ -894,9 +844,7 @@ function App() {
                   supabase.auth.signOut()
                 }
               >
-                <LogOut
-                  size={18}
-                />
+                <LogOut size={18} />
 
                 Sign out
               </button>
@@ -907,11 +855,7 @@ function App() {
 
       <nav>
         {nav.map(
-          ([
-            id,
-            Icon,
-            label
-          ]) => (
+          ([id, Icon, label]) => (
             <button
               key={id}
               className={
@@ -923,9 +867,7 @@ function App() {
                 setTab(id)
               }
             >
-              <Icon
-                size={20}
-              />
+              <Icon size={20} />
 
               <span>
                 {label}
@@ -946,109 +888,103 @@ function OfferCard({
   const title =
     offer.title ||
     offer.name ||
+    offer.offerName ||
     offer.offer_name ||
-    'Offer'
+    'Lootwalls Offer'
 
   const description =
     offer.description ||
-    offer.requirements ||
     offer.instructions ||
-    offer.short_description ||
+    offer.requirements ||
+    offer.shortDescription ||
     'Complete this offer to earn a reward.'
 
   const image =
     offer.image ||
+    offer.imageUrl ||
     offer.icon ||
     offer.thumbnail ||
     offer.logo
 
   const reward =
     offer.reward ??
-    offer.reward_amount ??
+    offer.userReward ??
     offer.amount ??
     offer.payout ??
     0
 
-  const network =
-    offer.network ||
-    offer.provider ||
-    offer.source ||
-    'Offerwall.ad'
-
   const category =
     offer.category ||
     offer.type ||
-    offer.offer_type ||
     ''
 
   const trackingUrl =
-    offer.tracking_url ||
+    offer.entryUrl ||
+    offer.entry_url ||
     offer.trackingUrl ||
-    offer.click_url ||
-    offer.clickUrl ||
-    offer.url ||
-    offer.link
+    offer.tracking_url ||
+    offer.url
 
   const offerId =
     offer.id ||
-    offer.offer_id ||
     offer.offerId ||
+    offer.offer_id ||
     title
 
-  const startOffer =
-    async () => {
-      if (
-        !trackingUrl ||
-        !user
-      ) {
-        return
-      }
-
-      const {
-        error
-      } =
-        await supabase
-          .from(
-            'offer_activity'
-          )
-          .insert({
-            user_id:
-              user.id,
-            offer_id:
-              String(
-                offerId
-              ),
-            offer_name:
-              title,
-            reward:
-              Number(
-                reward || 0
-              ),
-            currency:
-              offer.currency ||
-              'USD',
-            network,
-            tracking_url:
-              trackingUrl,
-            status:
-              'started'
-          })
-
-      if (error) {
-        console.error(
-          'Could not save offer start',
-          error
-        )
-      } else {
-        await onStarted?.()
-      }
-
-      window.open(
-        trackingUrl,
-        '_blank',
-        'noopener,noreferrer'
-      )
+  const startOffer = async () => {
+    if (
+      !trackingUrl ||
+      !user
+    ) {
+      return
     }
+
+    const {
+      error
+    } = await supabase
+      .from('offer_activity')
+      .insert({
+        user_id: user.id,
+
+        offer_id:
+          String(offerId),
+
+        offer_name:
+          title,
+
+        reward:
+          Number(
+            reward || 0
+          ),
+
+        currency:
+          'USD',
+
+        network:
+          'Lootwalls',
+
+        tracking_url:
+          trackingUrl,
+
+        status:
+          'started'
+      })
+
+    if (error) {
+      console.error(
+        'Could not save started offer:',
+        error
+      )
+    } else {
+      await onStarted?.()
+    }
+
+    window.open(
+      trackingUrl,
+      '_blank',
+      'noopener,noreferrer'
+    )
+  }
 
   return (
     <article className="offer-card">
@@ -1073,25 +1009,12 @@ function OfferCard({
           <p>
             {String(
               description
-            ).slice(
-              0,
-              140
-            )}
+            ).slice(0, 150)}
           </p>
 
-          {(network ||
-            category) && (
+          {category && (
             <small>
-              {[
-                network,
-                category
-              ]
-                .filter(
-                  Boolean
-                )
-                .join(
-                  ' · '
-                )}
+              Lootwalls · {category}
             </small>
           )}
         </div>
@@ -1104,20 +1027,14 @@ function OfferCard({
           </span>
 
           <b>
-            {money(
-              reward
-            )}
+            {money(reward)}
           </b>
         </div>
 
         <button
           className="primary small"
-          disabled={
-            !trackingUrl
-          }
-          onClick={
-            startOffer
-          }
+          disabled={!trackingUrl}
+          onClick={startOffer}
         >
           Start
 
@@ -1130,100 +1047,91 @@ function OfferCard({
   )
 }
 
-function Activity({
-  history
-}) {
+function Activity({ history }) {
   if (!history.length) {
     return (
       <div className="empty">
-        Your offer activity
-        will appear here.
+        Your offer activity will
+        appear here.
       </div>
     )
   }
 
-  const rewardText =
-    item => {
-      const amount =
-        money(
-          item.reward
-        )
+  const rewardText = item => {
+    const amount =
+      money(item.reward)
 
-      if (
-        item.status ===
-          'reversed' ||
-        item.status ===
-          'rejected'
-      ) {
-        return `-${amount}`
-      }
+    const status =
+      String(
+        item.status || ''
+      ).toLowerCase()
 
-      if (
-        item.status ===
-          'held' ||
-        item.status ===
-          'pending'
-      ) {
-        return `Pending ${amount}`
-      }
-
-      if (
-        item.status ===
-        'started'
-      ) {
-        return 'Started'
-      }
-
-      if (
-        item.status ===
-        'confirmed'
-      ) {
-        return `+${amount}`
-      }
-
-      return amount
+    if (
+      status === 'reversed' ||
+      status === 'rejected' ||
+      status === '0'
+    ) {
+      return `-${amount}`
     }
+
+    if (
+      status === 'held' ||
+      status === 'pending'
+    ) {
+      return `Pending ${amount}`
+    }
+
+    if (
+      status === 'started'
+    ) {
+      return 'Started'
+    }
+
+    if (
+      status === 'approved' ||
+      status === 'confirmed' ||
+      status === '1'
+    ) {
+      return `+${amount}`
+    }
+
+    return amount
+  }
 
   return (
     <div className="list">
-      {history.map(
-        item => (
-          <div
-            className="row"
-            key={item.id}
-          >
-            <div>
-              <b>
-                {item.title}
-              </b>
+      {history.map(item => (
+        <div
+          className="row"
+          key={item.id}
+        >
+          <div>
+            <b>
+              {item.title}
+            </b>
 
-              <span>
-                {item.source}
-                {' · '}
-                {item.status}
-                {' · '}
-                {new Date(
-                  item.created_at
-                ).toLocaleString()}
-              </span>
-            </div>
-
-            <strong>
-              {rewardText(
-                item
-              )}
-            </strong>
+            <span>
+              {item.source}
+              {' · '}
+              {item.status}
+              {' · '}
+              {new Date(
+                item.created_at
+              ).toLocaleString()}
+            </span>
           </div>
-        )
-      )}
+
+          <strong>
+            {rewardText(item)}
+          </strong>
+        </div>
+      ))}
     </div>
   )
 }
 
 createRoot(
-  document.getElementById(
-    'root'
-  )
+  document.getElementById('root')
 ).render(
   <App />
 )
