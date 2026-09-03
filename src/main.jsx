@@ -143,6 +143,7 @@ function App() {
   const [withdrawAmount, setWithdrawAmount] = useState('')
   const [upi, setUpi] = useState('')
   const [message, setMessage] = useState('')
+  const [messageTab, setMessageTab] = useState(null)
   const [isAdmin, setIsAdmin] = useState(false)
   const [adminWithdrawals, setAdminWithdrawals] = useState([])
   const [adminBusy, setAdminBusy] = useState(false)
@@ -460,16 +461,18 @@ function App() {
     )
 
     if (error || !data?.ok) {
-      setMessage(
+      showMessage(
         error?.message ||
           data?.error ||
-          'Could not update withdrawal.'
+          'Could not update withdrawal.',
+        'admin'
       )
     } else {
-      setMessage(
+      showMessage(
         status === 'paid'
           ? 'Withdrawal marked paid.'
-          : 'Withdrawal rejected and refunded.'
+          : 'Withdrawal rejected and refunded.',
+        'admin'
       )
 
       await Promise.all([
@@ -493,14 +496,37 @@ function App() {
     }
   }, [tab])
 
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'auto' })
+    setMessage('')
+    setMessageTab(null)
+  }, [tab])
+
+  useEffect(() => {
+    if (!message) return
+
+    const timer = window.setTimeout(() => {
+      setMessage('')
+      setMessageTab(null)
+    }, 3500)
+
+    return () => window.clearTimeout(timer)
+  }, [message])
+
+  const showMessage = (value, targetTab = tab) => {
+    setMessage(value)
+    setMessageTab(targetTab)
+  }
+
   const doWithdraw = async e => {
     e.preventDefault()
     setMessage('')
+    setMessageTab(null)
 
     const amount = Number(withdrawAmount)
 
     if (!Number.isFinite(amount) || amount <= 0) {
-      setMessage('Enter a valid withdrawal amount.')
+      showMessage('Enter a valid withdrawal amount.', 'wallet')
       return
     }
 
@@ -510,16 +536,16 @@ function App() {
     })
 
     if (error) {
-      setMessage(error.message)
+      showMessage(error.message, 'wallet')
       return
     }
 
     if (!data?.ok) {
-      setMessage(data?.error || 'Withdrawal failed.')
+      showMessage(data?.error || 'Withdrawal failed.', 'wallet')
       return
     }
 
-    setMessage(`Withdrawal requested: ${money(amount)}`)
+    showMessage(`Withdrawal requested: ${money(amount)}`, 'wallet')
     setWithdrawAmount('')
 
     if (data?.withdrawal_id) {
@@ -546,10 +572,7 @@ function App() {
     ['home', Home, 'Home'],
     ['earn', Gift, 'Earn'],
     ['wallet', Wallet, 'Wallet'],
-    ['profile', User, 'Profile'],
-    ...(isAdmin
-      ? [['admin', ShieldCheck, 'Admin']]
-      : [])
+    ['profile', User, 'Profile']
   ]
 
   const startedHistory = offerActivity.map(item => ({
@@ -671,6 +694,125 @@ function App() {
 
   return (
     <div className="app">
+      <style>{`
+        html, body, #root {
+          max-width: 100%;
+          overflow-x: hidden;
+        }
+
+        .app main {
+          padding-bottom: calc(118px + env(safe-area-inset-bottom)) !important;
+          scroll-padding-bottom: calc(118px + env(safe-area-inset-bottom));
+        }
+
+        .bottom-nav {
+          display: grid !important;
+          grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+          align-items: center;
+          gap: 0 !important;
+          min-height: 72px;
+          padding-bottom: env(safe-area-inset-bottom);
+          z-index: 100 !important;
+        }
+
+        .bottom-nav > button {
+          min-width: 0 !important;
+          width: 100%;
+          padding: 10px 4px !important;
+        }
+
+        .bottom-nav > button span {
+          font-size: 11px;
+          white-space: nowrap;
+        }
+
+        .page-notice {
+          margin: 0 0 18px !important;
+          animation: earnwallNoticeIn .18s ease-out;
+        }
+
+        @keyframes earnwallNoticeIn {
+          from { opacity: 0; transform: translateY(-4px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+
+        .profile-card {
+          min-width: 0;
+        }
+
+        .profile-card > b,
+        .profile-card > small {
+          overflow-wrap: anywhere;
+        }
+
+        .admin-entry {
+          width: 100%;
+          min-height: 64px;
+          margin-top: 18px;
+          padding: 12px 14px;
+          border: 1px solid rgba(255,255,255,.10);
+          border-radius: 16px;
+          background: rgba(255,255,255,.035);
+          color: inherit;
+          display: grid;
+          grid-template-columns: auto minmax(0,1fr) auto;
+          gap: 12px;
+          align-items: center;
+          text-align: left;
+          cursor: pointer;
+        }
+
+        .admin-entry span {
+          min-width: 0;
+          display: grid;
+          gap: 3px;
+        }
+
+        .admin-entry b {
+          font-size: 14px;
+        }
+
+        .admin-entry small {
+          opacity: .62;
+          font-size: 12px;
+        }
+
+        .admin-back {
+          display: block;
+          border: 0;
+          background: transparent;
+          color: inherit;
+          opacity: .65;
+          padding: 0 0 8px;
+          font: inherit;
+          font-size: 12px;
+          cursor: pointer;
+        }
+
+        .list .row {
+          min-width: 0;
+        }
+
+        .list .row > div {
+          min-width: 0;
+        }
+
+        .list .row span,
+        .list .row small {
+          overflow-wrap: anywhere;
+        }
+
+        @media (max-width: 380px) {
+          .bottom-nav > button span {
+            font-size: 10px;
+          }
+
+          .app main {
+            padding-left: 18px !important;
+            padding-right: 18px !important;
+          }
+        }
+      `}</style>
       <header>
         <div>
           <span className="eyebrow">AVAILABLE</span>
@@ -687,7 +829,11 @@ function App() {
       </header>
 
       <main>
-        {message && <div className="notice">{message}</div>}
+        {message && messageTab === tab && (
+          <div className="notice page-notice" role="status">
+            {message}
+          </div>
+        )}
 
         {tab === 'home' && (
           <>
@@ -904,6 +1050,21 @@ function App() {
               <b>{user.email}</b>
               <small>User ID: {user.id}</small>
 
+              {isAdmin && (
+                <button
+                  className="admin-entry"
+                  type="button"
+                  onClick={() => setTab('admin')}
+                >
+                  <ShieldCheck size={18} />
+                  <span>
+                    <b>Admin dashboard</b>
+                    <small>Manage withdrawal requests</small>
+                  </span>
+                  <ArrowRight size={18} />
+                </button>
+              )}
+
               <button
                 className="ghost danger"
                 onClick={() => supabase.auth.signOut()}
@@ -920,6 +1081,13 @@ function App() {
           <>
             <div className="section-head">
               <div>
+                <button
+                  type="button"
+                  className="admin-back"
+                  onClick={() => setTab('profile')}
+                >
+                  ← Profile
+                </button>
                 <span className="eyebrow">PRIVATE ADMIN</span>
                 <h2>Withdrawals</h2>
               </div>
@@ -1020,7 +1188,7 @@ function App() {
         )}
       </main>
 
-      <nav>
+      <nav className="bottom-nav">
         {nav.map(([id, Icon, label]) => (
           <button
             key={id}
