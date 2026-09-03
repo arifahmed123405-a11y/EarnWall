@@ -8,7 +8,8 @@ import {
   LogOut,
   ArrowRight,
   RefreshCcw,
-  ExternalLink
+  ExternalLink,
+  ShieldCheck
 } from 'lucide-react'
 
 import { supabase } from './supabase'
@@ -142,6 +143,9 @@ function App() {
   const [withdrawAmount, setWithdrawAmount] = useState('')
   const [upi, setUpi] = useState('')
   const [message, setMessage] = useState('')
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [adminWithdrawals, setAdminWithdrawals] = useState([])
+  const [adminBusy, setAdminBusy] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -395,6 +399,89 @@ function App() {
   }, [user?.id])
 
   useEffect(() => {
+    if (!user) {
+      setIsAdmin(false)
+      return
+    }
+
+    const checkAdmin = async () => {
+      const { data, error } = await supabase.functions.invoke(
+        'withdrawal-admin',
+        {
+          body: { action: 'list' }
+        }
+      )
+
+      if (error || !data?.ok) {
+        setIsAdmin(false)
+        return
+      }
+
+      setIsAdmin(true)
+      setAdminWithdrawals(data.withdrawals || [])
+    }
+
+    checkAdmin()
+  }, [user?.id])
+
+  const loadAdminWithdrawals = async () => {
+    if (!isAdmin) return
+
+    setAdminBusy(true)
+
+    const { data, error } = await supabase.functions.invoke(
+      'withdrawal-admin',
+      {
+        body: { action: 'list' }
+      }
+    )
+
+    if (!error && data?.ok) {
+      setAdminWithdrawals(data.withdrawals || [])
+    }
+
+    setAdminBusy(false)
+  }
+
+  const processWithdrawal = async (withdrawalId, status) => {
+    if (!isAdmin) return
+
+    setAdminBusy(true)
+
+    const { data, error } = await supabase.functions.invoke(
+      'withdrawal-admin',
+      {
+        body: {
+          action: 'process',
+          withdrawal_id: withdrawalId,
+          status
+        }
+      }
+    )
+
+    if (error || !data?.ok) {
+      setMessage(
+        error?.message ||
+          data?.error ||
+          'Could not update withdrawal.'
+      )
+    } else {
+      setMessage(
+        status === 'paid'
+          ? 'Withdrawal marked paid.'
+          : 'Withdrawal rejected and refunded.'
+      )
+
+      await Promise.all([
+        loadAdminWithdrawals(),
+        refreshData()
+      ])
+    }
+
+    setAdminBusy(false)
+  }
+
+  useEffect(() => {
     if (
       tab === 'earn' &&
       lootwallsOffers.length === 0 &&
@@ -434,6 +521,22 @@ function App() {
 
     setMessage(`Withdrawal requested: ${money(amount)}`)
     setWithdrawAmount('')
+
+    if (data?.withdrawal_id) {
+      supabase.functions
+        .invoke('withdrawal-notify', {
+          body: {
+            withdrawal_id: data.withdrawal_id
+          }
+        })
+        .catch(err => {
+          console.error(
+            'Telegram withdrawal notification failed:',
+            err
+          )
+        })
+    }
+
     refreshData()
   }
 
@@ -443,7 +546,10 @@ function App() {
     ['home', Home, 'Home'],
     ['earn', Gift, 'Earn'],
     ['wallet', Wallet, 'Wallet'],
-    ['profile', User, 'Profile']
+    ['profile', User, 'Profile'],
+    ...(isAdmin
+      ? [['admin', ShieldCheck, 'Admin']]
+      : [])
   ]
 
   const startedHistory = offerActivity.map(item => ({
@@ -805,6 +911,110 @@ function App() {
                 <LogOut size={18} />
                 Sign out
               </button>
+            </div>
+          </>
+        )}
+
+
+        {tab === 'admin' && isAdmin && (
+          <>
+            <div className="section-head">
+              <div>
+                <span className="eyebrow">PRIVATE ADMIN</span>
+                <h2>Withdrawals</h2>
+              </div>
+
+              <button
+                className="icon-btn"
+                onClick={loadAdminWithdrawals}
+                disabled={adminBusy}
+                aria-label="Refresh withdrawals"
+              >
+                <RefreshCcw size={18} />
+              </button>
+            </div>
+
+            <p style={{ opacity: 0.7, fontSize: '13px' }}>
+              Pending requests appear here and are also sent to Telegram.
+              Marking a request paid or rejected updates Supabase and the
+              original Telegram message.
+            </p>
+
+            <div className="list">
+              {adminWithdrawals.length === 0 && (
+                <div className="empty">
+                  No withdrawal requests.
+                </div>
+              )}
+
+              {adminWithdrawals.map(w => (
+                <div className="row" key={w.id}>
+                  <div style={{ minWidth: 0 }}>
+                    <b>{money(w.amount_usd)}</b>
+                    <span>{w.upi_id}</span>
+                    <small
+                      style={{
+                        display: 'block',
+                        opacity: 0.6,
+                        marginTop: '3px',
+                        wordBreak: 'break-all'
+                      }}
+                    >
+                      {w.user_id}
+                    </small>
+                  </div>
+
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'flex-end',
+                      gap: '8px'
+                    }}
+                  >
+                    <em className={`status ${w.status}`}>
+                      {w.status}
+                    </em>
+
+                    {w.status === 'pending' && (
+                      <div
+                        style={{
+                          display: 'flex',
+                          gap: '6px',
+                          flexWrap: 'wrap',
+                          justifyContent: 'flex-end'
+                        }}
+                      >
+                        <button
+                          className="primary small"
+                          disabled={adminBusy}
+                          onClick={() =>
+                            processWithdrawal(
+                              w.id,
+                              'paid'
+                            )
+                          }
+                        >
+                          Paid
+                        </button>
+
+                        <button
+                          className="ghost danger"
+                          disabled={adminBusy}
+                          onClick={() =>
+                            processWithdrawal(
+                              w.id,
+                              'rejected'
+                            )
+                          }
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
           </>
         )}
