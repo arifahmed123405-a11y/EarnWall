@@ -540,6 +540,45 @@ function App() {
               <span className="eyebrow">TOTAL {mergedOffers.length}</span>
             </div>
 
+            <section
+              style={{
+                marginBottom: '16px',
+                padding: '14px',
+                border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: '16px',
+                background: 'rgba(255,255,255,0.03)'
+              }}
+            >
+              <h3 style={{ marginTop: 0, marginBottom: '10px' }}>
+                What the status means
+              </h3>
+
+              <div
+                style={{
+                  display: 'grid',
+                  gap: '8px',
+                  fontSize: '13px',
+                  lineHeight: 1.45
+                }}
+              >
+                <div>
+                  <b>Started</b> — you opened the survey or offer. No reward has been earned yet.
+                </div>
+
+                <div>
+                  <b>Screened out / Rejected</b> — the provider decided you did not qualify for that survey or offer. No completion reward is added.
+                </div>
+
+                <div>
+                  <b>Completed</b> — the provider confirmed your completion. Your verified reward is added to your wallet.
+                </div>
+
+                <div>
+                  <b>Reversed</b> — a previously completed reward was later canceled or reversed by the provider.
+                </div>
+              </div>
+            </section>
+
             {loadingOffers && <div className="empty">Loading opportunities…</div>}
             {offerError && <div className="notice">{offerError}</div>}
 
