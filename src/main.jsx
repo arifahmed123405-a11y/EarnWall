@@ -126,6 +126,8 @@ function App() {
   const [tab, setTab] = useState('home')
   const [wallet, setWallet] = useState(null)
   const [lootwallsHistory, setLootwallsHistory] = useState([])
+  const [cpxTransactions, setCpxTransactions] = useState([])
+  const [cpxOutcomes, setCpxOutcomes] = useState([])
   const [offerActivity, setOfferActivity] = useState([])
   const [withdrawals, setWithdrawals] = useState([])
 
@@ -160,6 +162,8 @@ function App() {
     const [
       walletResult,
       lootwallsResult,
+      cpxTransactionsResult,
+      cpxOutcomesResult,
       activityResult,
       withdrawalResult,
       profileResult
@@ -172,6 +176,20 @@ function App() {
 
       supabase
         .from('lootwalls_transactions')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(30),
+
+      supabase
+        .from('cpx_transactions')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(30),
+
+      supabase
+        .from('cpx_outcome_events')
         .select('*')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
@@ -201,6 +219,8 @@ function App() {
 
     if (walletResult.data) setWallet(walletResult.data)
     setLootwallsHistory(lootwallsResult.data || [])
+    setCpxTransactions(cpxTransactionsResult.data || [])
+    setCpxOutcomes(cpxOutcomesResult.data || [])
     setOfferActivity(activityResult.data || [])
     setWithdrawals(withdrawalResult.data || [])
 
@@ -417,19 +437,30 @@ function App() {
     source: item.network || 'Offer'
   }))
 
-  const completedOfferIds = new Set(
+  const resolvedLootwallsOfferIds = new Set(
     lootwallsHistory
       .map(item => String(item.offer_id || ''))
       .filter(Boolean)
   )
 
-  const filteredStarted = startedHistory.filter(item => {
-    if (item.source !== 'Lootwalls') return true
+  const resolvedCpxOfferIds = new Set([
+    ...cpxTransactions.map(item => String(item.offer_id || '')),
+    ...cpxOutcomes.map(item => String(item.offer_id || ''))
+  ].filter(Boolean))
 
-    return !item.offerId || !completedOfferIds.has(item.offerId)
+  const filteredStarted = startedHistory.filter(item => {
+    if (item.source === 'Lootwalls') {
+      return !item.offerId || !resolvedLootwallsOfferIds.has(item.offerId)
+    }
+
+    if (item.source === 'CPX Research') {
+      return !item.offerId || !resolvedCpxOfferIds.has(item.offerId)
+    }
+
+    return true
   })
 
-  const conversionHistory = lootwallsHistory.map(item => ({
+  const lootwallsConversionHistory = lootwallsHistory.map(item => ({
     id: `lootwalls-${item.transaction_id || item.id}`,
     offerId: String(item.offer_id || ''),
     title: item.offer_name || 'Lootwalls reward',
@@ -444,9 +475,48 @@ function App() {
     source: 'Lootwalls'
   }))
 
+  const cpxTransactionHistory = cpxTransactions.map(item => ({
+    id: `cpx-transaction-${item.transaction_id || item.id}`,
+    offerId: String(item.offer_id || ''),
+    title: item.offer_id
+      ? `CPX Survey #${item.offer_id}`
+      : 'CPX survey',
+    reward: item.amount_local ?? 0,
+    status: Number(item.status) === 2 ? 'reversed' : 'completed',
+    created_at: item.updated_at || item.created_at,
+    source: 'CPX Research'
+  }))
+
+  const cpxOutcomeHistory = cpxOutcomes
+    .filter(item => String(item.event_type || '').toLowerCase() !== 'canceled')
+    .map(item => {
+      const eventType = String(item.event_type || '').toLowerCase()
+
+      const status =
+        eventType === 'screenout'
+          ? 'screened out'
+          : eventType === 'bonus'
+          ? 'bonus'
+          : eventType || 'updated'
+
+      return {
+        id: `cpx-outcome-${item.id}`,
+        offerId: String(item.offer_id || ''),
+        title: item.offer_id
+          ? `CPX Survey #${item.offer_id}`
+          : 'CPX survey',
+        reward: eventType === 'bonus' ? item.amount_local ?? 0 : 0,
+        status,
+        created_at: item.created_at,
+        source: 'CPX Research'
+      }
+    })
+
   const combinedHistory = [
     ...filteredStarted,
-    ...conversionHistory
+    ...lootwallsConversionHistory,
+    ...cpxTransactionHistory,
+    ...cpxOutcomeHistory
   ]
     .sort(
       (a, b) =>
