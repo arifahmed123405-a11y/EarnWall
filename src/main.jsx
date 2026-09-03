@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
   Home,
@@ -455,17 +455,16 @@ function App() {
     )
     .slice(0, 30)
 
-  const mergedOffers = useMemo(() => {
-    const seen = new Set()
+  const seenOffers = new Set()
 
-    return [...cpxOffers, ...lootwallsOffers].filter(offer => {
-      const key = `${offer._provider}:${offer._offerId}`
+  const mergedOffers = [...cpxOffers, ...lootwallsOffers].filter(offer => {
+    const key = `${offer._provider}:${offer._offerId}`
 
-      if (seen.has(key)) return false
-      seen.add(key)
-      return true
-    })
-  }, [cpxOffers, lootwallsOffers])
+    if (seenOffers.has(key)) return false
+
+    seenOffers.add(key)
+    return true
+  })
 
   return (
     <div className="app">
