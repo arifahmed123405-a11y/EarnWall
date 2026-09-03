@@ -133,6 +133,9 @@ function App() {
 
   const [lootwallsOffers, setLootwallsOffers] = useState([])
   const [cpxOffers, setCpxOffers] = useState([])
+  const [offerwallAdOffers, setOfferwallAdOffers] = useState([])
+  const [cpaGripOffers, setCpaGripOffers] = useState([])
+  const [providerFilter, setProviderFilter] = useState('all')
   const [loadingOffers, setLoadingOffers] = useState(false)
   const [offerError, setOfferError] = useState('')
 
@@ -199,7 +202,7 @@ function App() {
         .from('offer_activity')
         .select('*')
         .eq('user_id', user.id)
-        .in('network', ['Lootwalls', 'CPX Research'])
+        .in('network', ['Lootwalls', 'CPX Research', 'Offerwall.ad', 'CPAGrip'])
         .order('created_at', { ascending: false })
         .limit(50),
 
@@ -297,73 +300,87 @@ function App() {
       _offerId: survey.id || `cpx-${index}`
     }))
 
+
+  const normalizeOfferwallAd = list =>
+    list.map((offer, index) => ({
+      ...offer,
+      _provider: 'Offerwall.ad',
+      _key: `offerwallad-${offer.id || index}`,
+      _title: offer.title || offer.name || 'Offerwall.ad offer',
+      _description: offer.description || 'Complete this offer exactly as instructed.',
+      _image: offer.image || offer.icon || offer.thumbnail || offer.logo,
+      _reward: offer.reward ?? offer.user_reward ?? offer.payout ?? 0,
+      _category: offer.category || offer.type || 'Offer',
+      _url: offer.tracking_url || offer.trackingUrl || offer.url,
+      _offerId: offer.id || `offerwallad-${index}`
+    }))
+
+  const normalizeCpaGrip = list =>
+    list.map((offer, index) => ({
+      ...offer,
+      _provider: 'CPAGrip',
+      _key: `cpagrip-${offer.id || index}`,
+      _title: offer.title || 'CPAGrip offer',
+      _description: offer.description || 'Complete this offer exactly as instructed.',
+      _image: offer.image || offer.picture || offer.icon,
+      _reward: offer.payout ?? offer.reward ?? 0,
+      _category: offer.type || offer.offer_type || 'Offer',
+      _url: offer.url || offer.offerlink,
+      _offerId: offer.id || `cpagrip-${index}`
+    }))
+
   const loadOffers = async () => {
     if (!session) return
 
     setLoadingOffers(true)
     setOfferError('')
-
     const errors = []
 
     try {
-      const [lootwallsResult, cpxResult] = await Promise.allSettled([
-        supabase.functions.invoke('lootwalls-offers'),
-        supabase.functions.invoke('cpx-surveys')
-      ])
+      const [lootwallsResult, cpxResult, offerwallAdResult, cpaGripResult] =
+        await Promise.allSettled([
+          supabase.functions.invoke('lootwalls-offers'),
+          supabase.functions.invoke('cpx-surveys'),
+          supabase.functions.invoke('offerwallad-offers'),
+          supabase.functions.invoke('cpagrip-offers')
+        ])
 
-      if (lootwallsResult.status === 'fulfilled') {
-        const { data, error } = lootwallsResult.value
-
-        if (error) {
-          console.error('Lootwalls error:', error)
-          errors.push('Lootwalls unavailable')
-          setLootwallsOffers([])
-        } else {
-          const list =
-            data?.offers ||
-            data?.data ||
-            data?.results ||
-            (Array.isArray(data) ? data : [])
-
-          setLootwallsOffers(
-            normalizeLootwalls(Array.isArray(list) ? list : [])
-          )
+      const unpack = (result, name, setter, normalizer) => {
+        if (result.status !== 'fulfilled') {
+          console.error(`${name} failed:`, result.reason)
+          errors.push(name)
+          setter([])
+          return
         }
-      } else {
-        console.error('Lootwalls request failed:', lootwallsResult.reason)
-        errors.push('Lootwalls unavailable')
-        setLootwallsOffers([])
+
+        const { data, error } = result.value
+        if (error) {
+          console.error(`${name} error:`, error)
+          errors.push(name)
+          setter([])
+          return
+        }
+
+        let list =
+          data?.offers ||
+          data?.surveys ||
+          data?.data?.surveys ||
+          data?.data ||
+          data?.results ||
+          (Array.isArray(data) ? data : [])
+
+        setter(normalizer(Array.isArray(list) ? list : []))
       }
 
-      if (cpxResult.status === 'fulfilled') {
-        const { data, error } = cpxResult.value
+      unpack(lootwallsResult, 'Lootwalls', setLootwallsOffers, normalizeLootwalls)
+      unpack(cpxResult, 'CPX', setCpxOffers, normalizeCpx)
+      unpack(offerwallAdResult, 'Offerwall.ad', setOfferwallAdOffers, normalizeOfferwallAd)
+      unpack(cpaGripResult, 'CPAGrip', setCpaGripOffers, normalizeCpaGrip)
 
-        if (error) {
-          console.error('CPX error:', error)
-          errors.push('CPX unavailable')
-          setCpxOffers([])
-        } else {
-          const list = data?.surveys || data?.data?.surveys || []
-
-          if (data?.status && data.status !== 'success') {
-            console.error('CPX returned:', data)
-            errors.push('CPX unavailable')
-          }
-
-          setCpxOffers(
-            normalizeCpx(Array.isArray(list) ? list : [])
-          )
-        }
-      } else {
-        console.error('CPX request failed:', cpxResult.reason)
-        errors.push('CPX unavailable')
-        setCpxOffers([])
-      }
-
-      if (errors.length === 2) {
+      if (errors.length === 4) {
         setOfferError('Could not load earning opportunities right now.')
-      } else if (errors.length === 1) {
-        setOfferError(`${errors[0]}. Other available opportunities are shown below.`)
+      } else if (errors.length) {
+        setOfferError(`${errors.join(', ')} unavailable. Other providers are shown below.`)
       }
     } catch (err) {
       console.error(err)
@@ -381,7 +398,9 @@ function App() {
     if (
       tab === 'earn' &&
       lootwallsOffers.length === 0 &&
-      cpxOffers.length === 0
+      cpxOffers.length === 0 &&
+      offerwallAdOffers.length === 0 &&
+      cpaGripOffers.length === 0
     ) {
       loadOffers()
     }
@@ -527,14 +546,22 @@ function App() {
 
   const seenOffers = new Set()
 
-  const mergedOffers = [...cpxOffers, ...lootwallsOffers].filter(offer => {
+  const allOffers = [
+    ...cpxOffers,
+    ...lootwallsOffers,
+    ...offerwallAdOffers,
+    ...cpaGripOffers
+  ].filter(offer => {
     const key = `${offer._provider}:${offer._offerId}`
-
     if (seenOffers.has(key)) return false
-
     seenOffers.add(key)
     return true
   })
+
+  const visibleOffers =
+    providerFilter === 'all'
+      ? allOffers
+      : allOffers.filter(offer => offer._provider === providerFilter)
 
   return (
     <div className="app">
@@ -590,7 +617,7 @@ function App() {
           <>
             <div className="section-head">
               <div>
-                <span className="eyebrow">LOOTWALLS + CPX RESEARCH</span>
+                <span className="eyebrow">CHOOSE A PROVIDER</span>
                 <h2>Earn opportunities</h2>
               </div>
 
@@ -604,10 +631,31 @@ function App() {
               </button>
             </div>
 
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '14px' }}>
-              <span className="eyebrow">CPX {cpxOffers.length}</span>
-              <span className="eyebrow">LOOTWALLS {lootwallsOffers.length}</span>
-              <span className="eyebrow">TOTAL {mergedOffers.length}</span>
+            <div
+              style={{
+                display: 'flex',
+                gap: '8px',
+                flexWrap: 'wrap',
+                marginBottom: '14px'
+              }}
+            >
+              {[
+                ['all', `All ${allOffers.length}`],
+                ['CPX Research', `CPX ${cpxOffers.length}`],
+                ['Lootwalls', `Lootwalls ${lootwallsOffers.length}`],
+                ['Offerwall.ad', `Offerwall ${offerwallAdOffers.length}`],
+                ['CPAGrip', `CPAGrip ${cpaGripOffers.length}`]
+              ].map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setProviderFilter(id)}
+                  className={providerFilter === id ? 'primary small' : 'ghost'}
+                  style={{ minHeight: '36px', padding: '8px 12px' }}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
 
             <section
@@ -652,12 +700,12 @@ function App() {
             {loadingOffers && <div className="empty">Loading opportunities…</div>}
             {offerError && <div className="notice">{offerError}</div>}
 
-            {!loadingOffers && mergedOffers.length === 0 && (
+            {!loadingOffers && visibleOffers.length === 0 && (
               <div className="empty">No earning opportunities available right now.</div>
             )}
 
             <div className="offer-grid">
-              {mergedOffers.map(offer => (
+              {visibleOffers.map(offer => (
                 <OfferCard
                   key={offer._key}
                   offer={offer}
@@ -700,7 +748,7 @@ function App() {
                 value={withdrawAmount}
                 onChange={e => setWithdrawAmount(e.target.value)}
                 type="number"
-                min="1"
+                min="5"
                 step="0.01"
                 placeholder="Amount in USD"
                 required
@@ -716,7 +764,7 @@ function App() {
               <button className="primary">Request withdrawal</button>
 
               <small>
-                Minimum withdrawal is currently $1. Requests are manually reviewed.
+                Minimum withdrawal is currently $5. Requests are manually reviewed.
               </small>
             </form>
 
