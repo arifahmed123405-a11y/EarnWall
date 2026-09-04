@@ -147,6 +147,9 @@ function App() {
   const [isAdmin, setIsAdmin] = useState(false)
   const [adminWithdrawals, setAdminWithdrawals] = useState([])
   const [adminBusy, setAdminBusy] = useState(false)
+  const [cpxLaunch, setCpxLaunch] = useState(null)
+  const [cpxReturn, setCpxReturn] = useState(null)
+  const [cpxReturnChecking, setCpxReturnChecking] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -163,6 +166,33 @@ function App() {
   }, [])
 
   const user = session?.user
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const isCpxReturn =
+      params.has('cpx_user_id') ||
+      params.has('cpx_message_id') ||
+      params.has('subid_1') ||
+      params.has('subid_2')
+
+    if (!isCpxReturn) return
+
+    let pending = null
+    try {
+      pending = JSON.parse(localStorage.getItem('earnwall_pending_cpx') || 'null')
+    } catch {}
+
+    setCpxReturn({
+      ...pending,
+      returnedAt: new Date().toISOString(),
+      messageId: params.get('cpx_message_id') || null
+    })
+    setCpxReturnChecking(true)
+    setTab('home')
+
+    const cleanUrl = `${window.location.origin}${window.location.pathname}${window.location.hash || ''}`
+    window.history.replaceState({}, '', cleanUrl)
+  }, [])
 
   const refreshData = async () => {
     if (!user) return
@@ -636,7 +666,6 @@ function App() {
   }))
 
   const cpxOutcomeHistory = cpxOutcomes
-    .filter(item => String(item.event_type || '').toLowerCase() !== 'canceled')
     .map(item => {
       const eventType = String(item.event_type || '').toLowerCase()
 
@@ -645,6 +674,8 @@ function App() {
           ? 'screened out'
           : eventType === 'bonus'
           ? 'bonus'
+          : ['canceled', 'cancelled', 'rejected'].includes(eventType)
+          ? 'rejected'
           : eventType || 'updated'
 
       return {
@@ -672,6 +703,71 @@ function App() {
         new Date(a.created_at).getTime()
     )
     .slice(0, 30)
+
+  const latestCpxResult = (() => {
+    if (!cpxReturn) return null
+
+    const startedAt = cpxReturn.startedAt ? new Date(cpxReturn.startedAt).getTime() : 0
+    const candidates = [
+      ...cpxTransactions.map(item => ({
+        kind: Number(item.status) === 2 ? 'rejected' : 'completed',
+        reward: item.amount_local ?? 0,
+        created_at: item.updated_at || item.created_at,
+        offerId: String(item.offer_id || ''),
+        transactionId: item.transaction_id
+      })),
+      ...cpxOutcomes.map(item => {
+        const eventType = String(item.event_type || '').toLowerCase()
+        return {
+          kind:
+            eventType === 'screenout'
+              ? 'screenout'
+              : ['canceled', 'cancelled', 'rejected'].includes(eventType)
+              ? 'rejected'
+              : eventType === 'bonus'
+              ? 'completed'
+              : eventType || 'returned',
+          reward: item.amount_local ?? 0,
+          created_at: item.created_at,
+          offerId: String(item.offer_id || ''),
+          transactionId: item.transaction_id
+        }
+      })
+    ]
+      .filter(item => new Date(item.created_at || 0).getTime() >= startedAt - 60_000)
+      .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+
+    return candidates[0] || null
+  })()
+
+  useEffect(() => {
+    if (!user || !cpxReturnChecking) return
+
+    let cancelled = false
+    let tries = 0
+
+    const check = async () => {
+      tries += 1
+      await refreshData()
+      if (cancelled) return
+
+      if (tries >= 5) {
+        setCpxReturnChecking(false)
+        return
+      }
+
+      setTimeout(check, 1500)
+    }
+
+    check()
+    return () => { cancelled = true }
+  }, [user, cpxReturn?.returnedAt])
+
+  useEffect(() => {
+    if (!cpxReturn || !latestCpxResult) return
+    setCpxReturnChecking(false)
+    try { localStorage.removeItem('earnwall_pending_cpx') } catch {}
+  }, [cpxReturn, latestCpxResult?.transactionId, latestCpxResult?.created_at])
 
   const seenOffers = new Set()
 
@@ -802,6 +898,65 @@ function App() {
           overflow-wrap: anywhere;
         }
 
+        .cpx-gate {
+          position: fixed;
+          inset: 0;
+          z-index: 9999;
+          display: grid;
+          place-items: center;
+          padding: 24px;
+          background: rgba(7,10,16,.94);
+          backdrop-filter: blur(12px);
+        }
+
+        .cpx-gate-card, .cpx-result-card {
+          width: min(100%, 420px);
+          border-radius: 24px;
+          padding: 24px;
+          border: 1px solid rgba(255,255,255,.10);
+          background: rgba(255,255,255,.055);
+          box-shadow: 0 22px 70px rgba(0,0,0,.35);
+        }
+
+        .cpx-spinner {
+          width: 42px;
+          height: 42px;
+          margin-bottom: 18px;
+          border-radius: 50%;
+          border: 4px solid rgba(255,255,255,.12);
+          border-top-color: currentColor;
+          animation: cpxSpin .8s linear infinite;
+        }
+
+        @keyframes cpxSpin { to { transform: rotate(360deg); } }
+        .cpx-gate-card h2, .cpx-result-card h3 { margin: 0 0 8px; }
+        .cpx-gate-card p, .cpx-result-card p { margin: 0; opacity: .7; line-height: 1.5; }
+        .cpx-return-wrap { margin: 0 0 18px; }
+        .cpx-result-card { width: 100%; }
+        .cpx-result-card.completed { border-color: rgba(67,220,132,.28); background: rgba(38,170,98,.10); }
+        .cpx-result-card.rejected { border-color: rgba(255,95,95,.28); background: rgba(190,56,56,.10); }
+        .cpx-result-card.screenout { border-color: rgba(90,168,255,.28); background: rgba(57,119,210,.10); }
+        .cpx-result-card.pending { border-color: rgba(255,255,255,.12); }
+        .cpx-result-top { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+        .cpx-status { font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; padding:7px 10px; border-radius:999px; }
+        .cpx-status.completed { background: rgba(67,220,132,.16); color:#7ff0ad; }
+        .cpx-status.rejected { background: rgba(255,95,95,.16); color:#ff8f8f; }
+        .cpx-status.screenout { background: rgba(90,168,255,.16); color:#8ec5ff; }
+        .cpx-status.pending { background: rgba(255,255,255,.08); }
+        .cpx-amount { margin-top:16px; padding:16px; border-radius:18px; font-size:24px; font-weight:900; }
+        .cpx-amount.completed { background: rgba(67,220,132,.13); color:#8cf3b5; }
+        .cpx-amount.rejected { background: rgba(255,95,95,.12); color:#ff9999; }
+        .cpx-amount.screenout { background: rgba(90,168,255,.12); color:#9dceff; }
+        .cpx-amount.pending { background: rgba(255,255,255,.06); }
+
+        .list .row.activity-completed { background: rgba(38,170,98,.07); }
+        .list .row.activity-rejected { background: rgba(190,56,56,.07); }
+        .list .row.activity-screenout { background: rgba(57,119,210,.07); }
+        .activity-value { text-align:right; padding:8px 10px; border-radius:14px; }
+        .activity-value.completed { background: rgba(67,220,132,.12); color:#8cf3b5; }
+        .activity-value.rejected { background: rgba(255,95,95,.11); color:#ff9999; }
+        .activity-value.screenout { background: rgba(90,168,255,.11); color:#9dceff; }
+
         @media (max-width: 380px) {
           .bottom-nav > button span {
             font-size: 10px;
@@ -813,6 +968,17 @@ function App() {
           }
         }
       `}</style>
+
+      {cpxLaunch && (
+        <div className="cpx-gate">
+          <div className="cpx-gate-card">
+            <div className="cpx-spinner" />
+            <h2>Checking qualification…</h2>
+            <p>Matching you with this survey. You'll continue to the questionnaire in a moment.</p>
+          </div>
+        </div>
+      )}
+
       <header>
         <div>
           <span className="eyebrow">AVAILABLE</span>
@@ -829,6 +995,51 @@ function App() {
       </header>
 
       <main>
+        {cpxReturn && (
+          <div className="cpx-return-wrap">
+            {(() => {
+              const kind = latestCpxResult?.kind || 'pending'
+              const label =
+                kind === 'completed' ? 'Completed' :
+                kind === 'rejected' ? 'Rejected' :
+                kind === 'screenout' ? 'Screened Out' :
+                'Checking result'
+              const reward = Number(latestCpxResult?.reward || 0)
+              const amountText =
+                kind === 'completed' || (kind === 'screenout' && reward > 0)
+                  ? `+${money(reward)}`
+                  : money(0)
+
+              return (
+                <div className={`cpx-result-card ${kind}`}>
+                  <div className="cpx-result-top">
+                    <div>
+                      <small>Survey result</small>
+                      <h3>{cpxReturn.title || 'CPX Survey'}</h3>
+                    </div>
+                    <span className={`cpx-status ${kind}`}>{label}</span>
+                  </div>
+
+                  <div className={`cpx-amount ${kind}`}>
+                    {cpxReturnChecking && !latestCpxResult ? 'Verifying…' : amountText}
+                  </div>
+
+                  <p style={{ marginTop: 12 }}>
+                    {kind === 'completed'
+                      ? 'Reward confirmed and added to your wallet.'
+                      : kind === 'rejected'
+                      ? 'This survey was rejected or later reversed by the provider.'
+                      : kind === 'screenout'
+                      ? reward > 0
+                        ? 'You screened out, but a partial reward was credited.'
+                        : 'You screened out of this survey.'
+                      : 'We are waiting for the provider callback. This usually takes a few seconds.'}
+                  </p>
+                </div>
+              )
+            })()}
+          </div>
+        )}
         {message && messageTab === tab && (
           <div className="notice page-notice" role="status">
             {message}
@@ -963,6 +1174,7 @@ function App() {
                   offer={offer}
                   user={user}
                   onStarted={refreshData}
+                  onCpxLaunch={setCpxLaunch}
                 />
               ))}
             </div>
@@ -1204,7 +1416,7 @@ function App() {
   )
 }
 
-function OfferCard({ offer, user, onStarted }) {
+function OfferCard({ offer, user, onStarted, onCpxLaunch }) {
   const title = offer._title || offer.title || offer.name || 'Earning opportunity'
   const description = offer._description || offer.description || 'Complete this opportunity to earn a reward.'
   const image = offer._image || offer.image || offer.imageUrl || offer.icon
@@ -1234,6 +1446,23 @@ function OfferCard({ offer, user, onStarted }) {
       console.error('Could not save started offer:', error)
     } else {
       await onStarted?.()
+    }
+
+    if (network === 'CPX Research') {
+      const pending = {
+        offerId: String(offerId),
+        title,
+        reward: Number(reward || 0),
+        startedAt: new Date().toISOString()
+      }
+
+      try { localStorage.setItem('earnwall_pending_cpx', JSON.stringify(pending)) } catch {}
+      onCpxLaunch?.(pending)
+
+      setTimeout(() => {
+        window.location.href = trackingUrl
+      }, 850)
+      return
     }
 
     window.open(trackingUrl, '_blank', 'noopener,noreferrer')
@@ -1291,18 +1520,23 @@ function Activity({ history }) {
         const isConfirmed = ['confirmed', 'approved', 'completed', 'paid'].includes(status)
         const isReversed = ['reversed', 'rejected', 'cancelled', 'canceled'].includes(status)
 
+        const isScreenout = ['screened out', 'screenout'].includes(status)
+        const activityTone = isConfirmed ? 'completed' : isReversed ? 'rejected' : isScreenout ? 'screenout' : 'pending'
+
         return (
-          <div className="row" key={item.id}>
+          <div className={`row activity-${activityTone}`} key={item.id}>
             <div>
               <b>{item.title}</b>
               <span>{item.source}</span>
             </div>
 
-            <div style={{ textAlign: 'right' }}>
+            <div className={`activity-value ${activityTone}`}>
               <b>
                 {isReversed
                   ? `-${money(item.reward)}`
                   : isConfirmed
+                  ? `+${money(item.reward)}`
+                  : isScreenout && Number(item.reward || 0) > 0
                   ? `+${money(item.reward)}`
                   : money(item.reward)}
               </b>
